@@ -1,0 +1,85 @@
+%% D3 — Expediente State Diagram
+%% States: open -> in_progress -> pending_resolution -> closed -> archived
+%% Triggers reflect Spanish legal workflow actions
+
+stateDiagram-v2
+    direction LR
+
+    [*] --> open
+
+    open --> in_progress : Assign associate &<br/>register parties
+    in_progress --> pending_resolution : File claim (demanda)<br/>via LexNET
+    pending_resolution --> in_progress : Receive requerimiento /<br/>new procedural action needed
+    pending_resolution --> closed : Receive sentencia firme /<br/>settlement reached
+    closed --> archived : Archive expediente<br/>(retention period starts)
+
+    state open {
+        direction LR
+        [*] --> intake
+        intake --> court_assigned : Assign juzgado
+        court_assigned --> procurador_assigned : Assign procurador
+    }
+
+    state in_progress {
+        direction LR
+        [*] --> drafting
+        drafting --> filed : File demanda / contestacion
+        filed --> awaiting_response : Pending court action
+        awaiting_response --> drafting : New actuacion required
+    }
+
+    state pending_resolution {
+        direction LR
+        [*] --> awaiting_sentencia
+        awaiting_sentencia --> appeal_window : Sentencia received
+        appeal_window --> appeal_filed : File recurso
+        appeal_filed --> awaiting_sentencia : Appeal admitted
+    }
+
+    note right of open
+        Status: Abierto
+        Newly created expediente.
+        Client intake, hoja de encargo signed.
+        Court and procurador assigned here.
+    end note
+
+    note right of in_progress
+        Status: En Tramite
+        Active legal work underway.
+        Deadlines (plazos) are being tracked.
+        Documents collected from client.
+    end note
+
+    note right of pending_resolution
+        Status: Pendiente Resolucion
+        Awaiting court decision or
+        opposing party response.
+        May return to in_progress if
+        new actions are required.
+    end note
+
+    note right of closed
+        Status: Cerrado
+        All legal work completed.
+        Final invoice issued.
+        Client notified of outcome.
+    end note
+
+    note right of archived
+        Status: Archivado
+        Permanently stored.
+        No further action.
+        Subject to data retention policy.
+    end note
+
+    classDef sageState fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef successState fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef warningState fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef infoState fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef dangerState fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+
+    class open sageState
+    class in_progress infoState
+    class pending_resolution warningState
+    class closed successState
+    class archived sageState

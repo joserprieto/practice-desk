@@ -1,0 +1,65 @@
+%% F3 — Document Collection & Review Flow Diagram
+%% Associate creates request -> client notified -> uploads -> review -> accept/reject loop
+
+flowchart TD
+    START(["Associate identifies<br/>document need"]) --> CREATE["Associate creates<br/>DocumentRequest:<br/>- title (e.g., DNI, certificado)<br/>- description<br/>- dueDate (optional)"]
+
+    CREATE --> NOTIFY_CLIENT["System sends notification<br/>to client:<br/>appointment_reminder type<br/>+ email with portal link"]
+
+    NOTIFY_CLIENT --> CLIENT_PORTAL["Client logs into<br/>client portal"]
+
+    CLIENT_PORTAL --> VIEW_REQUEST["Client views pending<br/>document requests<br/>(solicitudes pendientes)"]
+
+    VIEW_REQUEST --> HAS_DOC{Client has<br/>the document?}
+
+    HAS_DOC -- No --> CONTACT["Client contacts firm<br/>via Message (mensaje)<br/>to clarify or request help"]
+    CONTACT --> RESOLVE["Associate responds<br/>with guidance"]
+    RESOLVE --> VIEW_REQUEST
+
+    HAS_DOC -- Yes --> UPLOAD["Client uploads file(s)<br/>Document entity created:<br/>- fileName, mimeType<br/>- sizeBytes, storagePath<br/>- uploadedBy (clientId)"]
+
+    UPLOAD --> STATUS_SUBMITTED["DocumentRequest status<br/>changes to: submitted"]
+
+    STATUS_SUBMITTED --> NOTIFY_ASSOCIATE["System sends<br/>document_submitted<br/>notification to associate"]
+
+    NOTIFY_ASSOCIATE --> REVIEW["Associate reviews<br/>uploaded document"]
+
+    REVIEW --> QUALITY{Document meets<br/>requirements?}
+
+    QUALITY -- Yes --> ACCEPT["Associate marks as accepted<br/>Status: accepted (aceptado)"]
+
+    QUALITY -- No --> REJECT["Associate marks as rejected<br/>Status: rejected (rechazado)<br/>+ provides rejectionReason"]
+
+    REJECT --> NOTIFY_REJECTED["System sends<br/>document_rejected<br/>notification to client<br/>with rejection reason"]
+
+    NOTIFY_REJECTED --> BACK_PENDING["DocumentRequest status<br/>returns to: pending"]
+    BACK_PENDING --> VIEW_REQUEST
+
+    ACCEPT --> ALL_DONE{All document<br/>requests for this<br/>expediente accepted?}
+
+    ALL_DONE -- No --> WAIT["Await remaining<br/>document submissions"]
+    WAIT --> DUE_CHECK{Any requests<br/>approaching<br/>dueDate?}
+    DUE_CHECK -- Yes --> SEND_REMINDER["Send reminder<br/>notification to client"]
+    SEND_REMINDER --> WAIT
+    DUE_CHECK -- No --> WAIT
+
+    ALL_DONE -- Yes --> COMPLETE_NOTIFY["System sends<br/>all_documents_complete<br/>notification to associate"]
+
+    COMPLETE_NOTIFY --> PROCEED["Associate proceeds with<br/>expediente workflow<br/>(file demanda, prepare<br/>for hearing, etc.)"]
+
+    PROCEED --> END_NODE(["Document collection<br/>complete"])
+
+    %% Styles
+    classDef startEnd fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef process fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef decision fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef success fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef danger fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+    classDef notify fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+
+    class START,END_NODE startEnd
+    class CREATE,CLIENT_PORTAL,VIEW_REQUEST,UPLOAD,REVIEW,CONTACT,RESOLVE,WAIT,PROCEED process
+    class HAS_DOC,QUALITY,ALL_DONE,DUE_CHECK decision
+    class ACCEPT,COMPLETE_NOTIFY,STATUS_SUBMITTED success
+    class REJECT,BACK_PENDING danger
+    class NOTIFY_CLIENT,NOTIFY_ASSOCIATE,NOTIFY_REJECTED,SEND_REMINDER notify

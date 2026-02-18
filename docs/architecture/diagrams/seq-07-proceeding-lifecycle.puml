@@ -1,0 +1,294 @@
+@startuml seq-07-proceeding-lifecycle
+!include brand-palette.puml
+title Proceeding Lifecycle (Ciclo de Vida del Procedimiento)
+
+actor "Associate\n(Abogado)" as Associate
+participant "Frontend" as FE
+participant "API" as API
+database "Database" as DB
+participant "NotificationService" as NS
+
+== 1. Register Proceeding (Interposicion) ==
+
+Associate -> FE : Open expediente\n& click "Nuevo Procedimiento"
+activate FE
+FE --> Associate : Show proceeding form
+deactivate FE
+
+Associate -> FE : Fill proceeding details:\n- type: "ordinario"\n  (juicio ordinario)\n- courtId: Juzgado PI n.5\n- filingDate: 2026-02-18\n- phase: 'filing'
+activate FE
+
+FE -> API : POST /api/expedientes/{id}/proceedings\n{ type: 'ordinario',\n  courtId: '...',\n  filingDate: '2026-02-18',\n  phase: 'filing' }
+activate API
+
+API -> DB : INSERT proceeding\n(expedienteId, type='ordinario',\ncourtId, filingDate,\nphase='filing')
+activate DB
+DB --> API : Proceeding created (id)
+deactivate DB
+
+API -> DB : UPDATE expediente\nSET status = 'in_progress'\nWHERE id = ? AND status = 'open'
+activate DB
+DB --> API : Expediente status updated
+deactivate DB
+
+API --> FE : 201 Created\n{ proceeding: { id, phase: 'filing' } }
+deactivate API
+FE --> Associate : Proceeding registered:\n"Procedimiento ordinario\nFase: Interposicion"
+deactivate FE
+
+== 2. Record Filing Action (Actuacion: Demanda) ==
+
+Associate -> FE : Click "Registrar Actuacion"\n& select "Demanda"
+activate FE
+
+FE -> API : POST /api/proceedings/{id}/actions\n{ type: 'demanda',\n  date: '2026-02-18',\n  description: 'Presentacion de\n  demanda via LexNET.\n  Reclamacion de 45,000 EUR\n  por incumplimiento contractual.',\n  responsibleId: assigneeId,\n  status: 'completed' }
+activate API
+
+API -> DB : INSERT procedural_action\n(proceedingId, type='demanda',\ndate, description,\nresponsibleId, status='completed')
+activate DB
+DB --> API : Action created
+deactivate DB
+
+API --> FE : 201 Created
+deactivate API
+FE --> Associate : Action recorded:\n"Demanda presentada"
+deactivate FE
+
+== 3. Court Admits Case (Admision) ==
+
+...court processes filing...
+
+Associate -> FE : Received admission\nnotification from LexNET.\nClick "Registrar Actuacion"
+activate FE
+
+FE -> API : POST /api/proceedings/{id}/actions\n{ type: 'admision',\n  date: '2026-03-05',\n  notificationDate: '2026-03-06',\n  description: 'Auto de admision\n  de la demanda.\n  Emplazamiento al demandado\n  por 20 dias habiles.',\n  status: 'completed' }
+activate API
+
+API -> DB : INSERT procedural_action\n(type='admision', ...)
+activate DB
+DB --> API : Action created
+deactivate DB
+
+API -> DB : UPDATE proceeding\nSET phase = 'admission'\nWHERE id = ?
+activate DB
+DB --> API : Phase updated
+deactivate DB
+
+API --> FE : 201 Created
+deactivate API
+FE --> Associate : Phase updated to "Admision"
+deactivate FE
+
+== 4. Set Procedural Deadlines ==
+
+Associate -> FE : Create deadline for\ndefendant's response
+activate FE
+
+FE -> API : POST /api/deadlines\n{ expedienteId,\n  proceedingId,\n  type: 'procedural',\n  description: 'Plazo contestacion\n  a la demanda',\n  startDate: '2026-03-06',\n  durationDays: 20,\n  workingDays: true,\n  consequence: 'preclusion',\n  responsibleId: assigneeId }
+activate API
+
+API -> API : Calculate dueDate:\n20 dias habiles from 2026-03-06\n(exclude weekends, holidays,\nAugust judicial recess)
+
+API -> DB : INSERT deadline\n(expedienteId, proceedingId,\ntype='procedural',\ndueDate='2026-04-03',\nstatus='pending', ...)
+activate DB
+DB --> API : Deadline created
+deactivate DB
+
+API -> NS : scheduleReminders(\ndeadlineId, responsibleId,\ndueDate='2026-04-03')
+activate NS
+NS --> API : Reminders scheduled\n(7d, 3d, 1d before)
+deactivate NS
+
+API --> FE : 201 Created
+deactivate API
+FE --> Associate : Deadline set:\n"Contestacion a la demanda\nVence: 03/04/2026"
+deactivate FE
+
+== 5. Discovery Phase (Instruccion) ==
+
+...defendant responds, discovery begins...
+
+Associate -> FE : Update proceeding phase\n& record discovery actions
+activate FE
+
+FE -> API : PATCH /api/proceedings/{id}\n{ phase: 'discovery' }
+activate API
+API -> DB : UPDATE proceeding\nSET phase = 'discovery'
+activate DB
+DB --> API : Updated
+deactivate DB
+API --> FE : 200 OK
+deactivate API
+
+FE -> API : POST /api/proceedings/{id}/actions\n{ type: 'prueba',\n  date: '2026-04-15',\n  description: 'Proposicion de prueba:\n  documental, testifical (3),\n  pericial contable.',\n  status: 'completed' }
+activate API
+API -> DB : INSERT procedural_action
+activate DB
+DB --> API : Created
+deactivate DB
+API --> FE : 201 Created
+deactivate API
+
+FE --> Associate : Discovery phase updated
+deactivate FE
+
+== 6. Preliminary Hearing (Audiencia Previa) ==
+
+Associate -> FE : Update phase to\npreliminary_hearing
+activate FE
+
+FE -> API : PATCH /api/proceedings/{id}\n{ phase: 'preliminary_hearing' }
+activate API
+API -> DB : UPDATE proceeding\nSET phase = 'preliminary_hearing'
+activate DB
+DB --> API : Updated
+deactivate DB
+API --> FE : 200 OK
+deactivate API
+
+FE --> Associate : Phase: "Audiencia Previa"
+deactivate FE
+
+note right of Associate
+  A Hearing entity is created
+  separately (see seq-04).
+  Hearing type: 'preliminary_hearing'
+end note
+
+== 7. Main Hearing / Trial (Juicio Oral) ==
+
+Associate -> FE : Update phase to trial
+activate FE
+
+FE -> API : PATCH /api/proceedings/{id}\n{ phase: 'trial' }
+activate API
+API -> DB : UPDATE proceeding\nSET phase = 'trial'
+activate DB
+DB --> API : Updated
+deactivate DB
+API --> FE : 200 OK
+deactivate API
+
+FE --> Associate : Phase: "Juicio Oral"
+deactivate FE
+
+== 8. Sentencia Received ==
+
+...court issues judgment...
+
+Associate -> FE : Record sentencia
+activate FE
+
+FE -> API : POST /api/proceedings/{id}/resolutions\n{ type: 'sentencia',\n  date: '2026-07-10',\n  notificationDate: '2026-07-12',\n  ruling: 'Estima parcialmente\n  la demanda. Condena al\n  demandado al pago de\n  30,000 EUR mas intereses.',\n  isFinal: false,\n  isAppealable: true,\n  appealType: 'apelacion',\n  appealDeadlineDays: 20 }
+activate API
+
+API -> DB : INSERT resolution
+activate DB
+DB --> API : Resolution created
+deactivate DB
+
+API -> DB : UPDATE proceeding\nSET phase = 'sentencing'
+activate DB
+DB --> API : Updated
+deactivate DB
+
+API -> NS : notifyMember(assigneeId,\ntype='resolution_received',\ntitle='Sentencia recibida',\nbody='Expediente {ref}:\nEstimacion parcial.\nRecurrible en 20 dias habiles.')
+activate NS
+NS --> Associate : Notification:\n"Sentencia recibida"
+deactivate NS
+
+API --> FE : 201 Created\n{ resolution, proceeding }
+deactivate API
+FE --> Associate : Sentencia recorded.\nPhase: "Sentencia"
+deactivate FE
+
+== 9. Appeal Decision ==
+
+alt #SLATE_100 Associate decides to appeal
+
+    Associate -> FE : Click "Interponer Recurso"
+    activate FE
+
+    note right of Associate
+      A new proceeding is created
+      linked to the current one
+      via previousProceedingId.
+      This forms the appeal chain:
+      1st Instance --> Appeal (Apelacion)
+    end note
+
+    FE -> API : POST /api/expedientes/{id}/proceedings\n{ type: 'apelacion',\n  courtId: audienciaProvincialId,\n  phase: 'appeal',\n  previousProceedingId:\n    '{1stInstanceProceedingId}' }
+    activate API
+
+    API -> DB : INSERT proceeding\n(expedienteId,\ntype='apelacion',\ncourtId=audienciaProvincialId,\nphase='appeal',\npreviousProceedingId=\n  '{1stInstanceProceedingId}')
+    activate DB
+    DB --> API : Appeal proceeding created
+    deactivate DB
+
+    API -> DB : UPDATE expediente\nSET status = 'in_progress'
+    activate DB
+    DB --> API : Updated
+    deactivate DB
+
+    API -> DB : INSERT procedural_action\n(proceedingId=newProceedingId,\ntype='recurso',\ndate=NOW(),\ndescription='Interposicion\nrecurso de apelacion',\nstatus='pending')
+    activate DB
+    DB --> API : Action created
+    deactivate DB
+
+    API -> DB : INSERT deadline\n(expedienteId, proceedingId,\ntype='procedural',\ndescription='Plazo formalizacion\nrecurso de apelacion',\ndueDate=calculatedDate,\nconsequence='preclusion')
+    activate DB
+    DB --> API : Deadline created
+    deactivate DB
+
+    API -> NS : scheduleReminders(...)
+    activate NS
+    NS --> API : Reminders scheduled
+    deactivate NS
+
+    API --> FE : 201 Created\n{ proceeding (appeal),\n  deadline }
+    deactivate API
+
+    FE --> Associate : Appeal proceeding created:\n"Recurso de apelacion\nante Audiencia Provincial.\nPlazo: {dueDate}"
+    deactivate FE
+
+else #FERN_100 Associate does NOT appeal (sentencia firme)
+
+    Associate -> FE : Mark resolution as final
+    activate FE
+
+    FE -> API : PATCH /api/resolutions/{id}\n{ isFinal: true }
+    activate API
+
+    API -> DB : UPDATE resolution\nSET isFinal = true
+    activate DB
+    DB --> API : Updated
+    deactivate DB
+
+    API -> DB : UPDATE proceeding\nSET phase = 'execution',\nresolutionDate = NOW()
+    activate DB
+    DB --> API : Updated
+    deactivate DB
+
+    API -> DB : UPDATE expediente\nSET status = 'pending_resolution'
+    activate DB
+    DB --> API : Updated
+    deactivate DB
+
+    API --> FE : 200 OK
+    deactivate API
+
+    FE --> Associate : Sentencia firme.\nProcedimiento en fase\nde "Ejecucion"
+    deactivate FE
+
+end
+
+note over Associate, DB
+  **Proceeding phase lifecycle:**
+  filing --> admission --> discovery --> preliminary_hearing
+  --> trial --> sentencing --> appeal (optional) --> execution
+
+  **Appeal chain via previousProceedingId:**
+  1st Instance (ordinario) --> Appeal (apelacion) --> Cassation (casacion)
+end note
+
+@enduml

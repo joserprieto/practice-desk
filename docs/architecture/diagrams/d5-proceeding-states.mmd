@@ -1,0 +1,93 @@
+%% D5 — Proceeding (Procedimiento) Phase Diagram
+%% Phases: filing -> admission -> discovery -> preliminary_hearing -> trial -> sentencing -> appeal -> execution
+%% Shows which transitions can skip phases (e.g., verbal proceedings skip discovery)
+
+stateDiagram-v2
+    direction TB
+
+    [*] --> filing
+
+    filing --> admission : Court admits<br/>demanda (auto de admision)
+    admission --> discovery : Discovery phase<br/>opens (instruccion)
+    admission --> preliminary_hearing : Skip discovery<br/>(juicio verbal <=6000 EUR)
+    admission --> trial : Skip to trial<br/>(proceso monitorio<br/>with opposition)
+    discovery --> preliminary_hearing : Audiencia previa<br/>scheduled
+    preliminary_hearing --> trial : Case proceeds<br/>to juicio oral
+    preliminary_hearing --> sentencing : Parties reach<br/>settlement (acuerdo)
+    trial --> sentencing : Trial concludes,<br/>judgment pending
+    sentencing --> appeal : Recurso filed<br/>within legal deadline
+    sentencing --> execution : Sentencia firme<br/>(no appeal / appeal<br/>deadline expires)
+    appeal --> sentencing : Appeal resolved,<br/>new sentencia issued
+    appeal --> execution : Appeal dismissed,<br/>original sentencia firme
+    execution --> [*] : Judgment fully<br/>executed / satisfied
+
+    note right of filing
+        Interposicion
+        Demanda filed via LexNET.
+        Court assigned (reparto).
+    end note
+
+    note right of admission
+        Admision
+        Court reviews and admits
+        the case. May request
+        subsanacion (corrections).
+    end note
+
+    note right of discovery
+        Instruccion
+        Evidence gathering.
+        Skipped in juicio verbal
+        and monitorio proceedings.
+    end note
+
+    note right of preliminary_hearing
+        Audiencia Previa
+        Civil preliminary hearing.
+        Settlement attempts.
+        Evidence admission decided.
+    end note
+
+    note right of trial
+        Juicio Oral
+        Oral hearing / trial.
+        Witnesses, expert testimony,
+        oral arguments.
+    end note
+
+    note right of sentencing
+        Sentencia
+        Court issues judgment.
+        May be appealed if
+        isAppealable = true.
+    end note
+
+    note right of appeal
+        Recurso
+        Appeal to higher court.
+        Types: apelacion, casacion,
+        extraordinario por infraccion
+        procesal.
+    end note
+
+    note right of execution
+        Ejecucion
+        Enforcement of final
+        judgment. Embargo,
+        payment collection.
+    end note
+
+    classDef sageState fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef infoState fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef warningState fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef successState fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef dangerState fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+
+    class filing sageState
+    class admission infoState
+    class discovery infoState
+    class preliminary_hearing warningState
+    class trial warningState
+    class sentencing dangerState
+    class appeal dangerState
+    class execution successState

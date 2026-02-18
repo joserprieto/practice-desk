@@ -139,7 +139,7 @@ install: ## Install project dependencies
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 .PHONY: lint
-lint: lint/md lint/shell ## Run all linters
+lint: lint/md lint/shell lint/api ## Run all linters
 	$(call print_success,All linters passed)
 
 .PHONY: lint/fix
@@ -163,6 +163,46 @@ lint/shell: ## Lint shell scripts (shellcheck)
 	$(call print_header,Linting Shell Scripts)
 	@shellcheck --severity=warning -x .github/scripts/ci/*.sh .github/scripts/issues/*.sh .github/scripts/issues/lib/*.sh
 	$(call print_success,Shell lint passed)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# API Linting
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+.PHONY: lint/api
+lint/api: lint/api/openapi lint/api/asyncapi ## Lint OpenAPI and AsyncAPI specs
+	$(call print_success,API lint passed)
+
+.PHONY: lint/api/openapi
+lint/api/openapi: ## Lint OpenAPI spec only
+	$(call print_header,Linting OpenAPI Spec)
+	@npx redocly lint docs/architecture/api/openapi.yaml
+	$(call print_success,OpenAPI lint passed)
+
+.PHONY: lint/api/asyncapi
+lint/api/asyncapi: ## Lint AsyncAPI spec only
+	$(call print_header,Linting AsyncAPI Spec)
+	@npx asyncapi validate docs/architecture/api/asyncapi.yaml
+	$(call print_success,AsyncAPI lint passed)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Documentation
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+.PHONY: docs
+docs: docs/openapi docs/asyncapi ## Generate all documentation (HTML)
+	$(call print_success,Documentation generated)
+
+.PHONY: docs/openapi
+docs/openapi: ## Generate OpenAPI HTML docs
+	$(call print_header,Generating OpenAPI Docs)
+	@npx redocly build-docs docs/architecture/api/openapi.yaml -o docs/architecture/api/dist/openapi.html
+	$(call print_success,OpenAPI docs generated)
+
+.PHONY: docs/asyncapi
+docs/asyncapi: ## Generate AsyncAPI HTML docs
+	$(call print_header,Generating AsyncAPI Docs)
+	@npx asyncapi generate fromTemplate docs/architecture/api/asyncapi.yaml @asyncapi/html-template -o docs/architecture/api/dist/asyncapi
+	$(call print_success,AsyncAPI docs generated)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Formatting

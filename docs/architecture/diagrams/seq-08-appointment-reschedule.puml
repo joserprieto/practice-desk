@@ -1,0 +1,250 @@
+@startuml seq-08-appointment-reschedule
+!include brand-palette.puml
+title Appointment Reschedule (Reprogramacion de Cita)
+
+actor "Client\n(Cliente)" as Client
+participant "Portal\n(Client Frontend)" as Portal
+participant "API" as API
+participant "NotificationService" as NS
+actor "Associate\n(Abogado)" as Associate
+participant "Frontend" as FE
+database "Database" as DB
+
+== 1. Existing Appointment ==
+
+note over Client, DB
+  **Current appointment:**
+  - Client: Maria Garcia
+  - Associate: Dr. Lopez
+  - Date: 2026-03-10, 10:00h
+  - Type: follow_up (Seguimiento)
+  - Location: office (Oficina)
+  - Status: confirmed
+  - Expediente: 2026/0042
+end note
+
+== 2. Client Requests Reschedule via Portal ==
+
+Client -> Portal : Log in to portal\n& navigate to "Mis Citas"
+activate Portal
+
+Portal -> API : GET /api/portal/appointments\n?clientId={id}&status=confirmed
+activate API
+API -> DB : SELECT appointments\nWHERE clientId = ?\nAND status IN ('scheduled','confirmed')\nAND date >= NOW()
+activate DB
+DB --> API : Upcoming appointments
+deactivate DB
+API --> Portal : 200 OK — appointment list
+deactivate API
+
+Portal --> Client : Show appointments:\n- 10/03/2026 10:00h\n  Seguimiento con Dr. Lopez\n  [Reprogramar] [Cancelar]
+deactivate Portal
+
+Client -> Portal : Click "Reprogramar"\n& enter reason:\n"Tengo una cita medica\na esa hora. Podria ser\npor la tarde?"
+activate Portal
+
+Portal -> API : PATCH /api/appointments/{id}\n{ status: 'reschedule_requested',\n  rescheduleReason:\n  'Tengo una cita medica\n  a esa hora. Podria ser\n  por la tarde?' }
+activate API
+
+API -> DB : UPDATE appointment\nSET status = 'reschedule_requested',\nnotes = CONCAT(notes,\n  '\nSolicitud reprogramacion:\n{reason}')
+activate DB
+DB --> API : Updated
+deactivate DB
+
+API -> NS : notifyMember(\nmemberId=assigneeId,\ntype='reschedule_request',\ntitle='Solicitud de reprogramacion',\nbody='La cliente Maria Garcia\nsolicita reprogramar la cita\ndel 10/03/2026 10:00h.\nMotivo: Cita medica.',\nreferenceId=appointmentId,\nreferenceType='appointment')
+activate NS
+
+NS -> DB : INSERT notification\n(memberId, type, title,\nbody, referenceId,\nreferenceType='appointment')
+activate DB
+DB --> NS : Notification saved
+deactivate DB
+
+NS -> NS : Send email to associate:\n"El cliente solicita\nreprogramar su cita"
+NS --> Associate : Email + in-app notification
+deactivate NS
+
+API --> Portal : 200 OK\n{ status: 'reschedule_requested' }
+deactivate API
+
+Portal --> Client : Confirmation:\n"Su solicitud de reprogramacion\nha sido enviada.\nRecibira una propuesta\nen breve."
+deactivate Portal
+
+== 3. Associate Proposes New Time ==
+
+Associate -> FE : Open notification\n& view reschedule request
+activate FE
+
+FE -> API : GET /api/appointments/{id}
+activate API
+API -> DB : SELECT appointment\nWHERE id = ?
+activate DB
+DB --> API : Appointment details\n(with reschedule reason)
+deactivate DB
+API --> FE : 200 OK
+deactivate API
+
+FE --> Associate : Show request:\n"Maria Garcia solicita\nreprogramar 10/03 10:00h.\nMotivo: Cita medica.\nPide por la tarde."
+deactivate FE
+
+Associate -> FE : Check calendar availability\n& propose new time:\n10/03/2026 16:00h
+activate FE
+
+FE -> API : GET /api/members/{id}/availability\n?date=2026-03-10
+activate API
+API -> DB : SELECT appointments, hearings\nWHERE memberId = ?\nAND date = '2026-03-10'
+activate DB
+DB --> API : Existing schedule
+deactivate DB
+API --> FE : Available slots:\n[14:00, 15:00, 16:00, 17:00]
+deactivate API
+
+FE --> Associate : Show available slots
+Associate -> FE : Select 16:00h
+
+FE -> API : PATCH /api/appointments/{id}\n{ date: '2026-03-10',\n  startTime: '16:00',\n  status: 'scheduled',\n  proposedBy: 'associate' }
+activate API
+
+API -> DB : UPDATE appointment\nSET date = '2026-03-10',\nstartTime = '16:00',\nstatus = 'scheduled'
+activate DB
+DB --> API : Updated
+deactivate DB
+
+API -> NS : notifyClient(clientId,\ntitle='Nueva hora propuesta',\nbody='Dr. Lopez propone\nreprogramar su cita para\nel 10/03/2026 a las 16:00h.\nPor favor confirme o\nsolicite otro horario.')
+activate NS
+NS -> NS : Send email to client
+NS --> Client : Email:\n"Se ha propuesto un\nnuevo horario para su cita"
+deactivate NS
+
+API --> FE : 200 OK
+deactivate API
+FE --> Associate : Proposal sent to client
+deactivate FE
+
+== 4. Client Confirms or Requests Again ==
+
+Client -> Portal : Open email link\n& view proposal
+activate Portal
+
+Portal -> API : GET /api/portal/appointments/{id}
+activate API
+API --> Portal : Appointment details:\n"Propuesta: 10/03/2026 16:00h"
+deactivate API
+
+Portal --> Client : Show proposal:\n"Dr. Lopez propone:\n10/03/2026 16:00h\n[Confirmar] [Solicitar otro horario]"
+deactivate Portal
+
+alt #CLAY_100 Client requests another time
+
+    Client -> Portal : Click "Solicitar otro horario"\n& enter message:\n"El 10 de marzo no me\nviene bien. Podria ser\nel 11 de marzo?"
+    activate Portal
+
+    Portal -> API : PATCH /api/appointments/{id}\n{ status: 'reschedule_requested',\n  rescheduleReason:\n  'El 10 no me viene bien.\n  Podria ser el 11/03?' }
+    activate API
+
+    API -> DB : UPDATE appointment\nSET status = 'reschedule_requested'
+    activate DB
+    DB --> API : Updated
+    deactivate DB
+
+    API -> NS : notifyMember(assigneeId,\ntitle='Nueva solicitud\nde reprogramacion',\nbody='Maria Garcia propone\n11/03/2026 como alternativa.')
+    activate NS
+    NS --> Associate : Notification:\n"Nuevo mensaje del cliente\nsobre reprogramacion"
+    deactivate NS
+
+    API --> Portal : 200 OK
+    deactivate API
+    Portal --> Client : "Su solicitud ha sido\nenviada nuevamente."
+    deactivate Portal
+
+    note right of Associate
+      The negotiation loop continues
+      until both parties agree on
+      a date and time.
+      Associate proposes new slot
+      (repeats step 3).
+    end note
+
+else #FERN_100 Client confirms proposed time
+
+    Client -> Portal : Click "Confirmar"
+    activate Portal
+
+    Portal -> API : PATCH /api/portal/appointments/{id}\n{ status: 'confirmed' }
+    activate API
+
+    API -> DB : UPDATE appointment\nSET status = 'confirmed',\nupdatedAt = NOW()
+    activate DB
+    DB --> API : Updated
+    deactivate DB
+
+    == 5. Both Receive Confirmation ==
+
+    API -> NS : sendConfirmation(\nassigneeId, clientId,\nappointmentId)
+    activate NS
+
+    group Notify Associate
+        NS -> DB : INSERT notification\n(memberId=assigneeId,\ntype='appointment_reminder',\ntitle='Cita confirmada',\nbody='Maria Garcia ha confirmado\nla cita del 10/03/2026\na las 16:00h.')
+        activate DB
+        DB --> NS : Saved
+        deactivate DB
+        NS --> Associate : Email + in-app:\n"Cita confirmada:\n10/03/2026 16:00h"
+    end
+
+    group Notify Client
+        NS -> NS : Send confirmation email
+        NS --> Client : Email:\n"Su cita ha sido confirmada:\n10/03/2026 a las 16:00h\ncon Dr. Lopez.\nLugar: Oficina del despacho."
+    end
+
+    deactivate NS
+
+    == 6. Schedule Reminders ==
+
+    API -> DB : DELETE FROM notification_schedule\nWHERE referenceId = ?\nAND referenceType = 'appointment'\nAND triggered = false
+    activate DB
+    DB --> API : Old reminders cleared
+    deactivate DB
+
+    API -> DB : INSERT notification_schedule[\n  { trigger: '2026-03-09T16:00',\n    recipientType: 'member',\n    recipientId: assigneeId,\n    type: 'appointment_reminder',\n    title: 'Cita manana 16:00h',\n    body: 'Seguimiento con\n    Maria Garcia' },\n  { trigger: '2026-03-10T15:00',\n    recipientType: 'member',\n    recipientId: assigneeId,\n    type: 'appointment_reminder',\n    title: 'Cita en 1 hora',\n    body: 'Maria Garcia, 16:00h' },\n  { trigger: '2026-03-09T16:00',\n    recipientType: 'client',\n    recipientId: clientId,\n    type: 'appointment_reminder',\n    title: 'Cita manana 16:00h' },\n  { trigger: '2026-03-10T15:00',\n    recipientType: 'client',\n    recipientId: clientId,\n    type: 'appointment_reminder',\n    title: 'Cita en 1 hora' }\n]
+    activate DB
+    DB --> API : Reminders scheduled (4):\n- 24h before: associate + client\n- 1h before: associate + client
+    deactivate DB
+
+    API --> Portal : 200 OK\n{ status: 'confirmed',\n  date: '2026-03-10',\n  startTime: '16:00' }
+    deactivate API
+
+    Portal --> Client : "Cita confirmada.\nRecibira recordatorios\n24 horas y 1 hora antes."
+    deactivate Portal
+
+end
+
+== 7. Scheduled Reminders Fire ==
+
+...24 hours before (09/03/2026 16:00h)...
+
+API -> NS : triggerScheduledReminders()
+activate API
+activate NS
+NS --> Associate : Email + push:\n"Recordatorio: cita manana\na las 16:00h con\nMaria Garcia"
+NS --> Client : Email + SMS:\n"Recordatorio: su cita es\nmanana a las 16:00h.\nDireccion: ..."
+deactivate NS
+deactivate API
+
+...1 hour before (10/03/2026 15:00h)...
+
+API -> NS : triggerScheduledReminders()
+activate API
+activate NS
+NS --> Associate : Push notification:\n"Cita en 1 hora:\nMaria Garcia, 16:00h"
+NS --> Client : SMS:\n"Recordatorio: su cita\nes en 1 hora (16:00h)"
+deactivate NS
+deactivate API
+
+note over Client, DB
+  **Appointment reschedule flow:**
+  confirmed --> reschedule_requested --> scheduled (new proposal)
+  --> confirmed (client accepts) OR reschedule_requested (loop)
+
+  **Reminders:** 24h and 1h before, sent to both parties.
+end note
+
+@enduml

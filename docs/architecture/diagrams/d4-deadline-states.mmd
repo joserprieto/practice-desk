@@ -1,0 +1,66 @@
+%% D4 — Deadline (Plazo) State Diagram
+%% States: pending -> completed, pending -> overdue
+%% Includes escalating alert triggers and dias habiles calculation context
+
+stateDiagram-v2
+    direction TB
+
+    [*] --> pending : Deadline created<br/>(dueDate calculated<br/>using dias habiles)
+
+    pending --> completed : Task fulfilled &<br/>evidence recorded<br/>(e.g., LexNET receipt)
+    pending --> overdue : dueDate passed<br/>without completion
+
+    overdue --> completed : Late completion<br/>(logged with delay)
+
+    state pending {
+        direction LR
+        [*] --> normal
+        normal --> alert_7d : T-7 dias habiles<br/>First reminder sent
+        alert_7d --> alert_3d : T-3 dias habiles<br/>Urgent reminder sent
+        alert_3d --> alert_1d : T-1 dia habil<br/>Critical alert to<br/>associate + supervisor
+    }
+
+    state overdue {
+        direction LR
+        [*] --> overdue_active
+        overdue_active --> escalated : Supervisor notified<br/>+ managing partner alert
+    }
+
+    note right of pending
+        Status: Pendiente
+        Deadline is being tracked.
+        Due date was computed by:
+        1. Start from notification date
+        2. Add duration in dias habiles
+        3. Skip weekends (sabados/domingos)
+        4. Skip public holidays (festivos)
+        5. Skip August judicial recess
+        Escalating alerts at 7d, 3d, 1d.
+    end note
+
+    note right of completed
+        Status: Completado
+        Action was performed on time
+        (or late). Completion evidence
+        is stored (e.g., LexNET
+        submission receipt number).
+    end note
+
+    note right of overdue
+        Status: Vencido
+        Deadline has passed.
+        Consequence depends on type:
+        - Preclusion (loss of right)
+        - Case abandonment (caducidad)
+        - Prescription expiry
+        - None (internal deadline)
+    end note
+
+    classDef sageState fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef successState fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef warningState fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef dangerState fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+
+    class pending warningState
+    class completed successState
+    class overdue dangerState

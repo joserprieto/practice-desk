@@ -1,0 +1,534 @@
+@startuml d1-class-model
+!include brand-palette.puml
+
+title Practice Desk — Conceptual Class Model\n21 Entities · Spanish Legal Practice Management
+
+' ============================================================
+' Enums
+' ============================================================
+
+enum ExpedienteStatus <<enum>> {
+  open
+  in_progress
+  pending_resolution
+  closed
+  archived
+}
+
+enum Jurisdiction <<enum>> {
+  civil
+  criminal
+  labor
+  administrative
+  commercial
+}
+
+enum MatterType <<enum>> {
+  ordinario
+  verbal
+  monitorio
+  cambiario
+  ejecucion
+}
+
+enum ProceduralPhase <<enum>> {
+  filing
+  admission
+  discovery
+  preliminary_hearing
+  trial
+  sentencing
+  appeal
+  execution
+}
+
+enum ResolutionType <<enum>> {
+  sentencia
+  auto
+  providencia
+  decreto
+}
+
+enum PartyRole <<enum>> {
+  plaintiff
+  defendant
+  co_defendant
+  third_party
+}
+
+enum DeadlineType <<enum>> {
+  procedural
+  prescription
+  expiration
+  internal
+}
+
+enum DeadlineConsequence <<enum>> {
+  preclusion
+  case_abandonment
+  prescription_expiry
+  none
+}
+
+enum HearingType <<enum>> {
+  preliminary_hearing
+  main_hearing
+  oral_trial
+  appearance
+  ratification
+}
+
+enum AppointmentType <<enum>> {
+  consultation
+  follow_up
+  signing
+}
+
+enum InvoiceType <<enum>> {
+  fee_note
+  final_invoice
+  proforma
+  advance_payment
+  expenses_note
+}
+
+enum BillingModel <<enum>> {
+  hourly
+  fixed_fee
+  retainer
+  mixed
+  success_fee
+}
+
+enum MemberRole <<enum>> {
+  managing_partner
+  associate
+  paralegal
+  office_admin
+}
+
+' ============================================================
+' Package: Auth
+' ============================================================
+
+package "Auth" as auth_pkg {
+
+  class User {
+    + id : UUIDv7 <<PK>>
+    --
+    email : Text <<unique>>
+    passwordHash : Text
+    role : Enum {member, client}
+    active : Boolean
+    lastLoginAt : DateTime
+  }
+
+  class Token {
+    + id : UUIDv7 <<PK>>
+    --
+    # userId : UUIDv7 <<FK>>
+    token : Text
+    expiresAt : DateTime
+    revokedAt : DateTime
+  }
+}
+
+' ============================================================
+' Package: Firm & Users
+' ============================================================
+
+package "Firm & Users" as firm_pkg {
+
+  class Firm <<tenant>> {
+    + id : UUIDv7 <<PK>>
+    --
+    name : Text
+    taxId : Text
+    sector : Enum {legal, tax, labor}
+    email : Text
+    address : Text
+    phone : Text
+  }
+
+  class Member {
+    + id : UUIDv7 <<PK>>
+    --
+    # firmId : UUIDv7 <<FK>>
+    # userId : UUIDv7 <<FK>>
+    role : MemberRole
+    firstName : Text
+    lastName : Text
+    email : Text
+    phone : Text
+    barNumber : Text
+    barAssociation : Text
+    # supervisorId : UUIDv7 <<FK>>
+    active : Boolean
+  }
+
+  class Client {
+    + id : UUIDv7 <<PK>>
+    --
+    # firmId : UUIDv7 <<FK>>
+    firstName : Text
+    lastName : Text
+    email : Text
+    phone : Text
+    taxId : Text
+    legalName : Text
+    type : Enum {individual, freelancer, sme, company}
+    active : Boolean
+  }
+
+  class Court {
+    + id : UUIDv7 <<PK>>
+    --
+    # firmId : UUIDv7 <<FK>>
+    name : Text
+    type : Text
+    jurisdiction : Jurisdiction
+    judicialDistrict : Text
+    province : Text
+    address : Text
+    phone : Text
+    email : Text
+    active : Boolean
+  }
+
+  class CourtAgent {
+    + id : UUIDv7 <<PK>>
+    --
+    # firmId : UUIDv7 <<FK>>
+    firstName : Text
+    lastName : Text
+    barNumber : Text
+    barAssociation : Text
+    judicialDistricts : Text[]
+    phone : Text
+    email : Text
+    active : Boolean
+  }
+
+  class Notification {
+    + id : UUIDv7 <<PK>>
+    --
+    # memberId : UUIDv7 <<FK>>
+    type : Enum
+    title : Text
+    body : Text
+    referenceId : UUIDv7
+    referenceType : Text
+    read : Boolean
+  }
+}
+
+' ============================================================
+' Package: Legal Core
+' ============================================================
+
+package "Legal Core" as legal_pkg {
+
+  class Expediente <<central>> {
+    + id : UUIDv7 <<PK>>
+    --
+    # firmId : UUIDv7 <<FK>>
+    # clientId : UUIDv7 <<FK>>
+    # assigneeId : UUIDv7 <<FK>>
+    reference : Text
+    title : Text
+    description : Text
+    jurisdiction : Jurisdiction
+    matterType : MatterType
+    status : ExpedienteStatus
+    # courtId : UUIDv7 <<FK>>
+    # courtAgentId : UUIDv7 <<FK>>
+    caseNumber : Text
+    amount : Decimal
+    billingModel : BillingModel
+    # parentId : UUIDv7 <<FK>>
+  }
+
+  class Party {
+    + id : UUIDv7 <<PK>>
+    --
+    # expedienteId : UUIDv7 <<FK>>
+    name : Text
+    role : PartyRole
+    # clientId : UUIDv7 <<FK>>
+    taxId : Text
+    opposingCounsel : Text
+    opposingCourtAgent : Text
+  }
+
+  class Proceeding {
+    + id : UUIDv7 <<PK>>
+    --
+    # expedienteId : UUIDv7 <<FK>>
+    type : Text
+    caseNumber : Text
+    # courtId : UUIDv7 <<FK>>
+    phase : ProceduralPhase
+    # previousProceedingId : UUIDv7 <<FK>>
+    filingDate : Date
+    resolutionDate : Date
+    outcome : Text
+  }
+
+  class ProceduralAction {
+    + id : UUIDv7 <<PK>>
+    --
+    # proceedingId : UUIDv7 <<FK>>
+    type : Text
+    date : Date
+    notificationDate : Date
+    description : Text
+    # responsibleId : UUIDv7 <<FK>>
+    status : Enum {pending, completed, overdue}
+  }
+
+  class Resolution {
+    + id : UUIDv7 <<PK>>
+    --
+    # proceedingId : UUIDv7 <<FK>>
+    type : ResolutionType
+    date : Date
+    notificationDate : Date
+    ruling : Text
+    isFinal : Boolean
+    isAppealable : Boolean
+    appealType : Text
+    appealDeadlineDays : Integer
+    # documentId : UUIDv7 <<FK>>
+  }
+
+  class Hearing {
+    + id : UUIDv7 <<PK>>
+    --
+    # proceedingId : UUIDv7 <<FK>>
+    type : HearingType
+    dateTime : DateTime
+    # courtId : UUIDv7 <<FK>>
+    courtroom : Text
+    estimatedDuration : Integer
+    status : Enum {scheduled, completed, suspended, postponed}
+    outcome : Text
+    notes : Text
+  }
+
+  class Deadline {
+    + id : UUIDv7 <<PK>>
+    --
+    # expedienteId : UUIDv7 <<FK>>
+    # proceedingId : UUIDv7 <<FK>>
+    type : DeadlineType
+    description : Text
+    startDate : Date
+    dueDate : Date
+    workingDays : Boolean
+    durationDays : Integer
+    consequence : DeadlineConsequence
+    # responsibleId : UUIDv7 <<FK>>
+    status : Enum {pending, completed, overdue}
+    completedAt : DateTime
+    completionEvidence : Text
+  }
+}
+
+' ============================================================
+' Package: Documents & Communication
+' ============================================================
+
+package "Documents & Communication" as docs_pkg {
+
+  class DocumentRequest {
+    + id : UUIDv7 <<PK>>
+    --
+    # expedienteId : UUIDv7 <<FK>>
+    title : Text
+    description : Text
+    dueDate : Date
+    status : Enum {pending, submitted, accepted, rejected}
+    rejectionReason : Text
+  }
+
+  class Document {
+    + id : UUIDv7 <<PK>>
+    --
+    # requestId : UUIDv7 <<FK>>
+    fileName : Text
+    mimeType : Text
+    sizeBytes : Integer
+    storagePath : Text
+    # uploadedBy : UUIDv7 <<FK>>
+    uploadedAt : DateTime
+  }
+
+  class Appointment {
+    + id : UUIDv7 <<PK>>
+    --
+    # firmId : UUIDv7 <<FK>>
+    # expedienteId : UUIDv7 <<FK>>
+    # clientId : UUIDv7 <<FK>>
+    # memberId : UUIDv7 <<FK>>
+    # scheduledBy : UUIDv7 <<FK>>
+    date : Date
+    startTime : Time
+    duration : Integer
+    type : AppointmentType
+    location : Enum {office, remote, client_site}
+    notes : Text
+    status : Enum {scheduled, confirmed, reschedule_requested, completed, cancelled}
+  }
+
+  class Message {
+    + id : UUIDv7 <<PK>>
+    --
+    # expedienteId : UUIDv7 <<FK>>
+    senderId : UUIDv7
+    senderType : Enum {member, client}
+    body : Text
+    readAt : DateTime
+  }
+}
+
+' ============================================================
+' Package: Financial
+' ============================================================
+
+package "Financial" as fin_pkg {
+
+  class TimeEntry {
+    + id : UUIDv7 <<PK>>
+    --
+    # expedienteId : UUIDv7 <<FK>>
+    # memberId : UUIDv7 <<FK>>
+    date : Date
+    durationMinutes : Integer
+    description : Text
+    billable : Boolean
+    hourlyRate : Decimal
+    # invoiceId : UUIDv7 <<FK>>
+  }
+
+  class Invoice {
+    + id : UUIDv7 <<PK>>
+    --
+    # firmId : UUIDv7 <<FK>>
+    # clientId : UUIDv7 <<FK>>
+    # expedienteId : UUIDv7 <<FK>>
+    invoiceNumber : Text
+    type : InvoiceType
+    issueDate : Date
+    concept : Text
+    taxableBase : Decimal
+    vatRate : Decimal
+    vatAmount : Decimal
+    irpfRate : Decimal
+    irpfAmount : Decimal
+    totalAmount : Decimal
+    paymentStatus : Enum {unpaid, partial, paid, overdue}
+    verifactuQr : Text
+  }
+}
+
+' ============================================================
+' Relationships — Auth
+' ============================================================
+
+User "1" -- "0..1" Member : authenticates >
+User "1" -- "0..1" Client : authenticates >
+User "1" -- "*" Token : owns >
+
+' ============================================================
+' Relationships — Firm & Users
+' ============================================================
+
+Firm "1" -- "*" Member : employs >
+Firm "1" -- "*" Client : serves >
+Firm "1" -- "*" Court : registers >
+Firm "1" -- "*" CourtAgent : registers >
+Firm "1" -- "*" Expediente : manages >
+
+Member "0..1" -- "*" Member : supervises >
+
+Member "1" -- "*" Notification : receives >
+
+' ============================================================
+' Relationships — Expediente (hub)
+' ============================================================
+
+Client "1" -- "*" Expediente : involved in <
+Member "1" -- "*" Expediente : assigned to <
+Court "0..1" -- "*" Expediente : hears <
+CourtAgent "0..1" -- "*" Expediente : represents <
+Expediente "0..1" -- "*" Expediente : parent of >
+
+Expediente "1" -- "*" Party : has >
+Expediente "1" -- "*" Proceeding : contains >
+Expediente "1" -- "*" Deadline : tracks >
+Expediente "1" -- "*" DocumentRequest : requires >
+Expediente "1" -- "*" Appointment : schedules >
+Expediente "1" -- "*" Message : thread >
+Expediente "1" -- "*" TimeEntry : logs >
+Expediente "1" -- "*" Invoice : billed via >
+
+' ============================================================
+' Relationships — Proceeding children
+' ============================================================
+
+Proceeding "1" -- "*" ProceduralAction : records >
+Proceeding "1" -- "*" Resolution : produces >
+Proceeding "1" -- "*" Hearing : schedules >
+Proceeding "0..1" -- "*" Deadline : scoped to <
+
+Proceeding "0..1" -- "*" Proceeding : appealed as >
+Proceeding "*" -- "0..1" Court : heard at >
+
+' ============================================================
+' Relationships — Documents & Communication
+' ============================================================
+
+DocumentRequest "1" -- "*" Document : fulfilled by >
+Document "*" -- "0..1" Resolution : attached to <
+
+Client "1" -- "*" Appointment : attends >
+Member "1" -- "*" Appointment : hosts >
+Member "1" -- "*" Appointment : created by <
+
+' ============================================================
+' Relationships — Financial
+' ============================================================
+
+Member "1" -- "*" TimeEntry : works >
+Invoice "0..1" -- "*" TimeEntry : includes <
+Client "1" -- "*" Invoice : billed to <
+Firm "1" -- "*" Invoice : issues >
+
+' ============================================================
+' Relationships — Cross-cutting FKs
+' ============================================================
+
+Member "0..1" -- "*" ProceduralAction : responsible for <
+Member "1" -- "*" Deadline : responsible for <
+
+Party "*" -- "0..1" Client : maps to >
+
+' ============================================================
+' Legend
+' ============================================================
+
+legend bottom left
+  |= Symbol |= Meaning |
+  | + id    | Primary Key (UUIDv7) |
+  | # field | Foreign Key |
+  | <<tenant>> | Multi-tenant root |
+  | <<central>> | Core hub entity |
+  | <<enum>> | Enumeration type |
+  | 1──* | One-to-many |
+  | 0..1──* | Optional-to-many |
+  | Timestamps | createdAt / updatedAt omitted for readability |
+end legend
+
+footer Practice Desk · Conceptual Data Model · 21 Entities · v0.1
+
+@enduml

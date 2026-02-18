@@ -1,0 +1,75 @@
+%% D8 — Document Request (Solicitud de Documentos) State Diagram
+%% States: pending -> submitted -> accepted
+%%         submitted -> rejected -> pending (resubmit cycle)
+
+stateDiagram-v2
+    direction TB
+
+    [*] --> pending : Associate creates<br/>document request<br/>(solicitud de documentos)
+
+    pending --> submitted : Client uploads<br/>document(s)<br/>(notification sent<br/>to associate)
+
+    submitted --> accepted : Associate reviews<br/>and approves document
+    submitted --> rejected : Associate reviews<br/>and rejects document<br/>(reason provided)
+
+    rejected --> pending : Client notified<br/>to resubmit<br/>(rejection reason<br/>included in notification)
+
+    pending --> pending : Reminder sent<br/>if approaching dueDate
+
+    accepted --> [*] : Document accepted,<br/>added to expediente
+
+    state submitted {
+        direction LR
+        [*] --> awaiting_review
+        awaiting_review --> under_review : Associate opens<br/>document for review
+    }
+
+    note right of pending
+        Status: Pendiente
+        Document has been requested
+        from the client. The request
+        includes title, description,
+        and optional dueDate.
+        Client sees request in portal.
+        Reminders sent as dueDate
+        approaches.
+    end note
+
+    note right of submitted
+        Status: Entregado
+        Client has uploaded one or more
+        files. Associate receives a
+        document_submitted notification.
+        Files stored with metadata:
+        fileName, mimeType, sizeBytes.
+    end note
+
+    note right of accepted
+        Status: Aceptado
+        Document meets requirements.
+        When all requests for an
+        expediente are accepted, an
+        all_documents_complete
+        notification is generated.
+    end note
+
+    note left of rejected
+        Status: Rechazado
+        Document does not meet
+        requirements. rejectionReason
+        is recorded. Client receives
+        document_rejected notification
+        with instructions to resubmit.
+        Returns to pending state.
+    end note
+
+    classDef sageState fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef infoState fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef warningState fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef successState fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef dangerState fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+
+    class pending warningState
+    class submitted infoState
+    class accepted successState
+    class rejected dangerState

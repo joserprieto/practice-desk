@@ -1,0 +1,85 @@
+%% D7 — Invoice (Factura) Payment Status State Diagram
+%% States: unpaid -> partial -> paid, unpaid -> overdue -> paid
+%% Includes VeriFactu submission step
+
+stateDiagram-v2
+    direction TB
+
+    [*] --> draft : Invoice created<br/>(factura / nota de honorarios)
+
+    state draft {
+        direction LR
+        [*] --> calculating
+        calculating --> verifactu_pending : Compute base imponible<br/>+ IVA (21%) - IRPF (15%/7%)
+        verifactu_pending --> verifactu_submitted : Submit to VeriFactu<br/>(AEAT registration)
+        verifactu_submitted --> ready : QR code received<br/>(verifactuQr stored)
+    }
+
+    draft --> unpaid : Invoice issued<br/>to client
+
+    unpaid --> partial : Partial payment<br/>received
+    unpaid --> overdue : Payment due date<br/>exceeded
+    unpaid --> paid : Full payment<br/>received
+
+    partial --> paid : Remaining balance<br/>paid in full
+    partial --> overdue : Payment due date<br/>exceeded with<br/>outstanding balance
+
+    overdue --> partial : Partial payment<br/>received (late)
+    overdue --> paid : Full payment<br/>received (late)
+
+    paid --> [*]
+
+    note right of draft
+        Factura en borrador
+        Invoice is being prepared.
+        VeriFactu registration is
+        mandatory before issuing.
+        Types: nota de honorarios,
+        factura definitiva, proforma,
+        provision de fondos,
+        nota de suplidos.
+    end note
+
+    note right of unpaid
+        Status: Pendiente de Pago
+        Invoice sent to client.
+        Payment terms active.
+        Sequential invoice number
+        assigned (VeriFactu compliant).
+    end note
+
+    note right of partial
+        Status: Pago Parcial
+        Some payment received.
+        Outstanding balance tracked.
+        Client notified of remainder.
+    end note
+
+    note left of overdue
+        Status: Vencida
+        Payment deadline passed.
+        Firm may initiate:
+        - Friendly reminder
+        - Formal demand
+        - Jura de cuentas
+          (expedited collection)
+    end note
+
+    note right of paid
+        Status: Pagada
+        Full payment received.
+        paidAt timestamp recorded.
+        Reconciled with bank account.
+    end note
+
+    classDef sageState fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef infoState fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef warningState fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef successState fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef dangerState fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+
+    class draft sageState
+    class unpaid infoState
+    class partial warningState
+    class overdue dangerState
+    class paid successState

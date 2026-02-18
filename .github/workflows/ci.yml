@@ -83,13 +83,37 @@ jobs:
         run: npx prettier --check '**/*.{md,json,yml,yaml}'
 
   # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Lint API Specs
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  lint-api:
+    name: API Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint OpenAPI
+        run: npx @redocly/cli lint docs/architecture/api/openapi.yaml --format=github-actions
+
+      - name: Validate AsyncAPI
+        run: npx @asyncapi/cli validate docs/architecture/api/asyncapi.yaml
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   # CI Summary
   # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-markdown, lint-shell, format-check]
+    needs: [lint-markdown, lint-shell, format-check, lint-api]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -105,14 +129,17 @@ jobs:
           LINT_MD_RESULT: ${{ needs.lint-markdown.result }}
           LINT_SHELL_RESULT: ${{ needs.lint-shell.result }}
           FORMAT_RESULT: ${{ needs.format-check.result }}
+          LINT_API_RESULT: ${{ needs.lint-api.result }}
         run: |
           echo "lint-markdown=${LINT_MD_RESULT}" >> "$GITHUB_OUTPUT"
           echo "lint-shell=${LINT_SHELL_RESULT}" >> "$GITHUB_OUTPUT"
           echo "format-check=${FORMAT_RESULT}" >> "$GITHUB_OUTPUT"
+          echo "lint-api=${LINT_API_RESULT}" >> "$GITHUB_OUTPUT"
 
           if [[ "${LINT_MD_RESULT}" == "success" && \
                 "${LINT_SHELL_RESULT}" == "success" && \
-                "${FORMAT_RESULT}" == "success" ]]; then
+                "${FORMAT_RESULT}" == "success" && \
+                "${LINT_API_RESULT}" == "success" ]]; then
             echo "overall=success" >> "$GITHUB_OUTPUT"
           else
             echo "overall=failure" >> "$GITHUB_OUTPUT"
@@ -123,6 +150,7 @@ jobs:
           LINT_MD_RESULT: ${{ needs.lint-markdown.result }}
           LINT_SHELL_RESULT: ${{ needs.lint-shell.result }}
           FORMAT_RESULT: ${{ needs.format-check.result }}
+          LINT_API_RESULT: ${{ needs.lint-api.result }}
           OVERALL_RESULT: ${{ steps.result.outputs.overall }}
         run: |
           echo "## CI Results" >> "$GITHUB_STEP_SUMMARY"
@@ -132,6 +160,7 @@ jobs:
           echo "| Markdown Lint | \`${LINT_MD_RESULT}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Shell Lint | \`${LINT_SHELL_RESULT}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Format Check | \`${FORMAT_RESULT}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| API Lint | \`${LINT_API_RESULT}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           if [[ "${OVERALL_RESULT}" == "success" ]]; then
@@ -169,6 +198,15 @@ jobs:
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/ci/on-failure.sh "format-check" "${RUN_URL}"
 
+      - name: Handle lint-api failure
+        if: >-
+          always() && github.ref == 'refs/heads/main' && needs.lint-api.result == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/scripts/ci/on-failure.sh "lint-api" "${RUN_URL}"
+
       # --- Success handling (main branch only) ---
 
       - name: Handle lint-markdown success
@@ -191,6 +229,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/ci/on-success.sh "format-check"
+
+      - name: Handle lint-api success
+        if: >-
+          always() && github.ref == 'refs/heads/main' && needs.lint-api.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/ci/on-success.sh "lint-api"
 
       # --- Final gate ---
 

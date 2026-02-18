@@ -1,0 +1,227 @@
+@startuml seq-06-client-portal-login
+!include brand-palette.puml
+title Client Portal Login (Acceso al Portal del Cliente)
+
+actor "Client\n(Cliente)" as Client
+participant "Portal\n(Frontend)" as Portal
+participant "API" as API
+participant "AuthService" as Auth
+database "Database" as DB
+
+== 1. Client Enters Email ==
+
+Client -> Portal : Navigate to portal\nlogin page
+activate Portal
+Portal --> Client : Show login form:\n[ Email field ]\n[ Continue button ]
+deactivate Portal
+
+Client -> Portal : Enter email address
+activate Portal
+
+Portal -> API : POST /api/auth/identify\n{ email: "cliente@example.com" }
+activate API
+
+API -> Auth : identifyUser(email)
+activate Auth
+
+Auth -> DB : SELECT user\nWHERE email = ?\nAND role = 'client'\nAND active = true
+activate DB
+DB --> Auth : User found (id, email, hasPassword)
+deactivate DB
+
+alt #CLAY_100 User Not Found
+    Auth --> API : 404 Not Found
+    API --> Portal : 404 — user not found
+    Portal --> Client : Show error:\n"No existe una cuenta\ncon este correo electronico.\nContacte con su despacho."
+    deactivate Auth
+    deactivate API
+    deactivate Portal
+
+else #FERN_100 User Found — Show Auth Options
+    Auth --> API : 200 OK\n{ userId, hasPassword: true,\n  authMethods: ['password', 'magic_link'] }
+    deactivate Auth
+    API --> Portal : Auth options available
+    deactivate API
+
+    Portal --> Client : Show authentication options:\n[A] Contrasena (password)\n[B] Enlace magico (magic link)
+    deactivate Portal
+
+    == 2. Authentication Paths ==
+
+    alt #SLATE_100 Path A: Email + Password
+
+        Client -> Portal : Enter password\n& click "Iniciar Sesion"
+        activate Portal
+
+        Portal -> API : POST /api/auth/login\n{ email: "cliente@example.com",\n  password: "********" }
+        activate API
+
+        API -> Auth : authenticatePassword(\nemail, password)
+        activate Auth
+
+        Auth -> DB : SELECT user\nWHERE email = ?
+        activate DB
+        DB --> Auth : User record\n(passwordHash)
+        deactivate DB
+
+        Auth -> Auth : bcrypt.compare(\npassword, passwordHash)
+
+        alt #CLAY_100 Password Invalid
+            Auth -> DB : INSERT login_attempt\n(userId, success=false,\nip, timestamp)
+            activate DB
+            DB --> Auth : Logged
+            deactivate DB
+
+            Auth --> API : 401 Unauthorized
+            API --> Portal : 401 — invalid credentials
+            Portal --> Client : Show error:\n"Contrasena incorrecta.\nIntentos restantes: 4"
+
+            note right of Client
+              After 5 failed attempts,
+              account is locked for
+              30 minutes.
+            end note
+
+        else #FERN_100 Password Valid
+            Auth -> Auth : Generate JWT access token\n(exp: 15 min)\n& refresh token (exp: 7 days)
+
+            Auth -> DB : INSERT token\n(userId, token=refreshToken,\nexpiresAt=NOW()+7d)
+            activate DB
+            DB --> Auth : Token stored
+            deactivate DB
+
+            Auth -> DB : UPDATE user\nSET lastLoginAt = NOW()
+            activate DB
+            DB --> Auth : Updated
+            deactivate DB
+
+            Auth --> API : { accessToken (JWT),\n  refreshToken,\n  expiresIn: 900 }
+            deactivate Auth
+
+            API --> Portal : 200 OK\n{ accessToken, refreshToken }
+            deactivate API
+
+            Portal -> Portal : Store tokens:\naccessToken in memory,\nrefreshToken in\nhttpOnly cookie
+
+            Portal --> Client : Redirect to dashboard:\n"Bienvenido/a, {firstName}"
+            deactivate Portal
+        end
+
+    else #SLATE_100 Path B: Magic Link
+
+        Client -> Portal : Click "Enviar enlace magico"
+        activate Portal
+
+        Portal -> API : POST /api/auth/magic-link\n{ email: "cliente@example.com" }
+        activate API
+
+        API -> Auth : generateMagicLink(email)
+        activate Auth
+
+        Auth -> Auth : Generate secure token\n(crypto.randomBytes(32))\nExpires in 15 minutes
+
+        Auth -> DB : INSERT token\n(userId, token=magicToken,\nexpiresAt=NOW()+15min,\ntype='magic_link')
+        activate DB
+        DB --> Auth : Token stored
+        deactivate DB
+
+        Auth -> Auth : Send email:\nTo: cliente@example.com\nSubject: "Acceso al Portal\n— Practice Desk"\nBody: "Haga clic en el\nsiguiente enlace para\nacceder a su portal:\nhttps://portal.../auth/\nverify?token={magicToken}\n\nEste enlace expira\nen 15 minutos."
+
+        Auth --> API : Magic link sent
+        deactivate Auth
+
+        API --> Portal : 200 OK\n{ message: "Enlace enviado" }
+        deactivate API
+
+        Portal --> Client : Show confirmation:\n"Hemos enviado un enlace\na su correo electronico.\nRevise su bandeja de entrada."
+        deactivate Portal
+
+        ...Client checks email...
+
+        Client -> Portal : Click magic link in email\nhttps://portal.../auth/\nverify?token={magicToken}
+        activate Portal
+
+        Portal -> API : POST /api/auth/verify-magic-link\n{ token: "{magicToken}" }
+        activate API
+
+        API -> Auth : verifyMagicLink(token)
+        activate Auth
+
+        Auth -> DB : SELECT token\nWHERE token = ?\nAND type = 'magic_link'\nAND expiresAt > NOW()\nAND revokedAt IS NULL
+        activate DB
+        DB --> Auth : Token record (userId)
+        deactivate DB
+
+        alt #CLAY_100 Token Invalid or Expired
+            Auth --> API : 401 Unauthorized\n"Token invalido o expirado"
+            API --> Portal : 401 Error
+            Portal --> Client : Show error:\n"El enlace ha expirado\no no es valido.\nSolicite uno nuevo."
+
+        else #FERN_100 Token Valid
+            Auth -> DB : UPDATE token\nSET revokedAt = NOW()\nWHERE id = ?\n(single-use token)
+            activate DB
+            DB --> Auth : Revoked
+            deactivate DB
+
+            Auth -> Auth : Generate JWT access token\n& refresh token\n(same as password path)
+
+            Auth -> DB : INSERT token\n(userId, token=refreshToken,\nexpiresAt=NOW()+7d)
+            activate DB
+            DB --> Auth : Stored
+            deactivate DB
+
+            Auth -> DB : UPDATE user\nSET lastLoginAt = NOW()
+            activate DB
+            DB --> Auth : Updated
+            deactivate DB
+
+            Auth --> API : { accessToken, refreshToken }
+            deactivate Auth
+
+            API --> Portal : 200 OK\n{ accessToken, refreshToken }
+            deactivate API
+
+            Portal -> Portal : Store tokens:\naccessToken in memory,\nrefreshToken in\nhttpOnly cookie
+
+            Portal --> Client : Redirect to dashboard:\n"Bienvenido/a, {firstName}"
+            deactivate Portal
+        end
+
+    end
+
+end
+
+== 3. Client Dashboard (Authenticated) ==
+
+Client -> Portal : View dashboard
+activate Portal
+
+Portal -> API : GET /api/portal/dashboard\nAuthorization: Bearer {JWT}
+activate API
+
+API -> Auth : validateJWT(token)
+activate Auth
+Auth --> API : Valid — userId, role='client'
+deactivate Auth
+
+API -> DB : SELECT expedientes,\nappointments,\ndocument_requests,\nmessages\nWHERE clientId = ?
+activate DB
+DB --> API : Client data
+deactivate DB
+
+API --> Portal : 200 OK\n{ expedientes, appointments,\n  pendingDocuments, messages }
+deactivate API
+
+Portal --> Client : Dashboard:\n- Mis Expedientes (2)\n- Citas Proximas (1)\n- Documentos Pendientes (3)\n- Mensajes (1 nuevo)
+deactivate Portal
+
+note over Client, DB
+  **Authentication summary:**
+  - Path A: email + password --> validate --> JWT --> dashboard
+  - Path B: email --> magic link --> click link --> validate token --> JWT --> dashboard
+  - JWT access token: 15 min TTL
+  - Refresh token: 7 days, httpOnly cookie
+  - Magic link: single-use, 15 min expiry
+end note
+
+@enduml

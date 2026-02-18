@@ -1,0 +1,187 @@
+@startuml seq-04-hearing-workflow
+!include brand-palette.puml
+title Hearing Workflow (Vista / Senalamiento)
+
+actor "Paralegal\n(Auxiliar Juridico)" as Paralegal
+participant "Frontend" as FE
+participant "API" as API
+participant "CourtSystem\n(LexNET)" as LexNET
+participant "NotificationService" as NS
+actor "Associate\n(Abogado)" as Associate
+actor "Client\n(Cliente)" as Client
+database "Database" as DB
+
+== 1. Court Notification Received via LexNET ==
+
+LexNET -> Paralegal : Notificacion judicial:\nsenalamiento de vista\nJuzgado Primera Instancia n.3\nSala 2, 15/04/2026 10:00h
+activate Paralegal
+
+note right of LexNET
+  LexNET is the mandatory
+  electronic judicial
+  communications platform.
+  Paralegal checks daily.
+end note
+
+== 2. Paralegal Registers Hearing ==
+
+Paralegal -> FE : Open expediente\n& click "Registrar Vista"
+activate FE
+FE --> Paralegal : Show hearing form
+deactivate FE
+
+Paralegal -> FE : Fill hearing details:\n- type: preliminary_hearing\n  (audiencia previa)\n- dateTime: 2026-04-15 10:00\n- courtId: Juzgado PI n.3\n- courtroom: Sala 2\n- estimatedDuration: 120 min\n- proceedingId
+activate FE
+
+FE -> API : POST /api/proceedings/{id}/hearings\n{ type: 'preliminary_hearing',\n  dateTime: '2026-04-15T10:00:00',\n  courtId: '...',\n  courtroom: 'Sala 2',\n  estimatedDuration: 120,\n  status: 'scheduled' }
+activate API
+
+API -> DB : INSERT hearing\n(proceedingId, type, dateTime,\ncourtId, courtroom,\nestimatedDuration,\nstatus='scheduled')
+activate DB
+DB --> API : Hearing created (id)
+deactivate DB
+
+note right of API
+  System automatically creates
+  a calendar entry and schedules
+  reminder notifications.
+end note
+
+== 3. Schedule Reminders ==
+
+API -> DB : INSERT notification_schedule[\n  { trigger: dateTime - 7d,\n    recipientId: assigneeId,\n    type: 'hearing_reminder',\n    title: 'Vista en 7 dias' },\n  { trigger: dateTime - 1d,\n    recipientId: assigneeId,\n    type: 'hearing_reminder',\n    title: 'Vista MANANA' },\n  { trigger: dateTime - 7d,\n    recipientId: clientId,\n    type: 'hearing_reminder',\n    title: 'Vista en 7 dias' },\n  { trigger: dateTime - 1d,\n    recipientId: clientId,\n    type: 'hearing_reminder',\n    title: 'Vista MANANA' }\n]
+activate DB
+DB --> API : Reminders scheduled (4)
+deactivate DB
+
+API --> FE : 201 Created\n{ hearing: { id, dateTime, status } }
+deactivate API
+FE --> Paralegal : Hearing registered\n"Vista registrada:\n15/04/2026 10:00h"
+deactivate FE
+deactivate Paralegal
+
+== 4. Reminder — 7 Days Before Hearing ==
+
+...7 days before hearing (08/04/2026)...
+
+API -> NS : triggerScheduledReminders()
+activate API
+activate NS
+
+group Associate Reminder (7 days)
+    NS -> DB : INSERT notification\n(memberId=assigneeId,\ntype='hearing_reminder',\ntitle='Vista en 7 dias',\nbody='Audiencia previa\nJuzgado PI n.3, Sala 2\n15/04/2026 10:00h\nExpediente {ref}')
+    activate DB
+    DB --> NS : Saved
+    deactivate DB
+    NS --> Associate : Email + in-app:\n"Recordatorio: vista\nen 7 dias"
+end
+
+group Client Reminder (7 days)
+    NS -> NS : Send email to client
+    NS --> Client : Email:\n"Tiene una vista programada\nel 15/04/2026 a las 10:00h"
+end
+
+deactivate NS
+deactivate API
+
+== 5. Reminder — 1 Day Before Hearing ==
+
+...1 day before hearing (14/04/2026)...
+
+API -> NS : triggerScheduledReminders()
+activate API
+activate NS
+
+group Associate Reminder (1 day)
+    NS -> DB : INSERT notification\n(type='hearing_reminder',\ntitle='Vista MANANA',\nbody='Audiencia previa MANANA\n10:00h, Sala 2\nJuzgado PI n.3')
+    activate DB
+    DB --> NS : Saved
+    deactivate DB
+    NS --> Associate : Email + push + SMS:\n"MANANA: vista a las 10:00h"
+end
+
+group Client Reminder (1 day)
+    NS -> NS : Send email + SMS
+    NS --> Client : Email + SMS:\n"Recordatorio: su vista\nes MANANA a las 10:00h.\nDirijase a Juzgado PI n.3,\nSala 2."
+end
+
+deactivate NS
+deactivate API
+
+== 6. Hearing Day — Associate Records Outcome ==
+
+...hearing day (15/04/2026)...
+
+Associate -> FE : Open hearing\n& click "Registrar Resultado"
+activate FE
+FE --> Associate : Show outcome form
+deactivate FE
+
+Associate -> FE : Record outcome:\n- status: 'completed'\n- outcome: "Demanda admitida.\n  Apertura periodo de prueba.\n  Juicio oral senalado\n  para 15/06/2026."
+activate FE
+
+FE -> API : PATCH /api/hearings/{id}\n{ status: 'completed',\n  outcome: '...',\n  notes: 'Detalles de la vista...' }
+activate API
+
+API -> DB : UPDATE hearing\nSET status = 'completed',\noutcome = '...',\nnotes = '...'
+activate DB
+DB --> API : Updated
+deactivate DB
+
+API --> FE : 200 OK
+deactivate API
+FE --> Associate : Hearing marked as completed
+deactivate FE
+
+== 7. Unfavorable Outcome — Automatic Appeal Deadline ==
+
+alt #CLAY_100 Outcome is unfavorable (sentencia desfavorable)
+
+    Associate -> FE : Record sentencia\nas unfavorable &\nappealable (recurrible)
+    activate FE
+
+    FE -> API : POST /api/proceedings/{id}/resolutions\n{ type: 'sentencia',\n  date: '2026-04-15',\n  ruling: 'Desestima la demanda',\n  isFinal: false,\n  isAppealable: true,\n  appealType: 'apelacion',\n  appealDeadlineDays: 20 }
+    activate API
+
+    API -> DB : INSERT resolution
+    activate DB
+    DB --> API : Resolution created
+    deactivate DB
+
+    note right of API #CLAY_100
+      **Automatic deadline creation:**
+      appealDeadlineDays = 20
+      workingDays = true (dias habiles)
+      consequence = 'preclusion'
+      System calculates dueDate
+      excluding weekends, holidays,
+      and August judicial recess.
+    end note
+
+    API -> API : Calculate due date:\n20 dias habiles from\nnotification date\n(excluding weekends,\nholidays, August recess)
+
+    API -> DB : INSERT deadline\n(expedienteId, proceedingId,\ntype='procedural',\ndescription='Plazo recurso\nde apelacion',\nstartDate='2026-04-15',\ndueDate='2026-05-15',\nworkingDays=true,\ndurationDays=20,\nconsequence='preclusion',\nresponsibleId=assigneeId,\nstatus='pending')
+    activate DB
+    DB --> API : Deadline created
+    deactivate DB
+
+    API -> NS : sendAlert(assigneeId,\ntype='deadline_reminder',\ntitle='Nuevo plazo: Recurso\nde apelacion',\nbody='20 dias habiles para\nrecurrir. Vence: 15/05/2026')
+    activate NS
+    NS --> Associate : Email + in-app:\n"Nuevo plazo creado\nautomaticamente:\nRecurso de apelacion\nVence: 15/05/2026"
+    deactivate NS
+
+    API --> FE : 201 Created\n{ resolution, deadline }
+    deactivate API
+    FE --> Associate : Resolution & appeal deadline\nregistered
+    deactivate FE
+
+else #FERN_100 Outcome is favorable
+    note right of Associate
+      No appeal deadline needed.
+      Associate may update
+      proceeding phase
+      to 'execution'.
+    end note
+end
+
+@enduml

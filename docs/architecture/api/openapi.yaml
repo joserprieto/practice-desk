@@ -1,0 +1,4024 @@
+openapi: 3.1.0
+info:
+  title: Practice Desk API
+  version: 1.0.0
+  description: |
+    REST API for Practice Desk — a Spanish legal practice management platform.
+
+    ## Authentication
+    All endpoints (except `/auth/*`) require a Bearer JWT in the `Authorization` header.
+    Access tokens are short-lived (15 min); refresh tokens are stored in HTTP-only cookies.
+
+    ## Multi-Tenancy
+    All data is firm-scoped. The `firmId` is derived from the JWT. No explicit tenant
+    parameter is required.
+
+    ## Pagination
+    List endpoints use cursor-based pagination with `cursor` and `limit` query parameters.
+
+    ## Errors
+    Error responses follow RFC 7807 (Problem Details for HTTP APIs).
+  contact:
+    name: Practice Desk Engineering
+    email: engineering@practicedesk.app
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: https://api.practicedesk.app/v1
+    description: Production
+  - url: https://staging-api.practicedesk.app/v1
+    description: Staging
+  - url: http://localhost:3000/v1
+    description: Local development
+
+tags:
+  - name: Auth
+    description: Authentication and session management
+  - name: Firm
+    description: Firm (despacho) configuration
+  - name: Members
+    description: Firm members (associates, partners, paralegals, admins)
+  - name: Clients
+    description: Client management
+  - name: Expedientes
+    description: Expediente (case dossier) lifecycle
+  - name: Parties
+    description: Parties (partes procesales) within an expediente
+  - name: Proceedings
+    description: Judicial proceedings (procedimientos) within an expediente
+  - name: ProceduralActions
+    description: Procedural actions (actuaciones procesales) within a proceeding
+  - name: Resolutions
+    description: Court resolutions (resoluciones judiciales) within a proceeding
+  - name: Hearings
+    description: Court hearings (vistas / señalamientos)
+  - name: Deadlines
+    description: Procedural and internal deadlines (plazos)
+  - name: DocumentRequests
+    description: Document requests and uploaded documents
+  - name: Documents
+    description: Document upload and download
+  - name: Appointments
+    description: Client appointments (citas)
+  - name: Messages
+    description: Expediente communication thread
+  - name: Notifications
+    description: System notifications for firm members
+  - name: TimeEntries
+    description: Billable time tracking
+  - name: Invoices
+    description: Invoicing and billing (VeriFactu compliant)
+  - name: Dashboard
+    description: Dashboard summaries for partners and associates
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ── Auth ───────────────────────────────────────────────────────────────────
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Authenticate with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshToken
+      summary: Refresh the access token using the refresh cookie
+      security: []
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the refresh token and end the session
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/magic-link:
+    post:
+      tags: [Auth]
+      operationId: sendMagicLink
+      summary: Send a one-time login link (client portal)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: Magic link sent (always returns 202 to prevent enumeration)
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Firm ───────────────────────────────────────────────────────────────────
+  /firms/me:
+    get:
+      tags: [Firm]
+      operationId: getCurrentFirm
+      summary: Get the current firm profile
+      responses:
+        '200':
+          description: Firm details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Firm'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Firm]
+      operationId: updateCurrentFirm
+      summary: Update the current firm profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirmUpdate'
+      responses:
+        '200':
+          description: Firm updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Firm'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Members ────────────────────────────────────────────────────────────────
+  /members:
+    get:
+      tags: [Members]
+      operationId: listMembers
+      summary: List firm members
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/MemberRole'
+        - name: active
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated member list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMemberList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Members]
+      operationId: createMember
+      summary: Invite a new member to the firm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberCreate'
+      responses:
+        '201':
+          description: Member created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /members/{memberId}:
+    parameters:
+      - $ref: '#/components/parameters/MemberIdParam'
+    get:
+      tags: [Members]
+      operationId: getMember
+      summary: Get a member by ID
+      responses:
+        '200':
+          description: Member details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Members]
+      operationId: updateMember
+      summary: Update a member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberUpdate'
+      responses:
+        '200':
+          description: Member updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Members]
+      operationId: deactivateMember
+      summary: Deactivate a member (soft delete)
+      responses:
+        '204':
+          description: Member deactivated
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Clients ────────────────────────────────────────────────────────────────
+  /clients:
+    get:
+      tags: [Clients]
+      operationId: listClients
+      summary: List clients
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/ClientType'
+        - name: active
+          in: query
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Search by name, email, or tax ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated client list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedClientList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Clients]
+      operationId: createClient
+      summary: Create a new client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientCreate'
+      responses:
+        '201':
+          description: Client created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /clients/{clientId}:
+    parameters:
+      - $ref: '#/components/parameters/ClientIdParam'
+    get:
+      tags: [Clients]
+      operationId: getClient
+      summary: Get a client by ID
+      responses:
+        '200':
+          description: Client details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Clients]
+      operationId: updateClient
+      summary: Update a client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientUpdate'
+      responses:
+        '200':
+          description: Client updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Clients]
+      operationId: deactivateClient
+      summary: Deactivate a client (soft delete)
+      responses:
+        '204':
+          description: Client deactivated
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /clients/import:
+    post:
+      tags: [Clients]
+      operationId: importClients
+      summary: Bulk import clients from CSV or Excel
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV or XLSX file with client data
+      responses:
+        '202':
+          description: Import accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [processing]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Expedientes ────────────────────────────────────────────────────────────
+  /expedientes:
+    get:
+      tags: [Expedientes]
+      operationId: listExpedientes
+      summary: List expedientes
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ExpedienteStatus'
+        - name: jurisdiction
+          in: query
+          schema:
+            $ref: '#/components/schemas/Jurisdiction'
+        - name: assigneeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: clientId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          description: Search by reference, title, or case number
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, reference]
+            default: createdAt
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Paginated expediente list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExpedienteList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Expedientes]
+      operationId: createExpediente
+      summary: Create a new expediente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpedienteCreate'
+      responses:
+        '201':
+          description: Expediente created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expediente'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+    get:
+      tags: [Expedientes]
+      operationId: getExpediente
+      summary: Get an expediente by ID
+      responses:
+        '200':
+          description: Expediente details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expediente'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Expedientes]
+      operationId: updateExpediente
+      summary: Update an expediente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpedienteUpdate'
+      responses:
+        '200':
+          description: Expediente updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expediente'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Expedientes]
+      operationId: archiveExpediente
+      summary: Archive an expediente
+      responses:
+        '204':
+          description: Expediente archived
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Parties ────────────────────────────────────────────────────────────────
+  /expedientes/{expedienteId}/parties:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+    get:
+      tags: [Parties]
+      operationId: listParties
+      summary: List parties in an expediente
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Party list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPartyList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Parties]
+      operationId: addParty
+      summary: Add a party to the expediente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyCreate'
+      responses:
+        '201':
+          description: Party added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}/parties/{partyId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - name: partyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Parties]
+      operationId: updateParty
+      summary: Update a party
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyUpdate'
+      responses:
+        '200':
+          description: Party updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Parties]
+      operationId: removeParty
+      summary: Remove a party from the expediente
+      responses:
+        '204':
+          description: Party removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Proceedings ────────────────────────────────────────────────────────────
+  /expedientes/{expedienteId}/proceedings:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+    get:
+      tags: [Proceedings]
+      operationId: listProceedings
+      summary: List proceedings in an expediente
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Proceeding list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProceedingList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Proceedings]
+      operationId: createProceeding
+      summary: Create a proceeding in the expediente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProceedingCreate'
+      responses:
+        '201':
+          description: Proceeding created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proceeding'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}/proceedings/{proceedingId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - $ref: '#/components/parameters/ProceedingIdParam'
+    patch:
+      tags: [Proceedings]
+      operationId: updateProceeding
+      summary: Update a proceeding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProceedingUpdate'
+      responses:
+        '200':
+          description: Proceeding updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proceeding'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Procedural Actions ─────────────────────────────────────────────────────
+  /expedientes/{expedienteId}/proceedings/{proceedingId}/procedural-actions:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - $ref: '#/components/parameters/ProceedingIdParam'
+    get:
+      tags: [ProceduralActions]
+      operationId: listProceduralActions
+      summary: List procedural actions in a proceeding
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Action list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProceduralActionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [ProceduralActions]
+      operationId: createProceduralAction
+      summary: Record a procedural action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProceduralActionCreate'
+      responses:
+        '201':
+          description: Action recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProceduralAction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}/proceedings/{proceedingId}/procedural-actions/{actionId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - $ref: '#/components/parameters/ProceedingIdParam'
+      - name: actionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [ProceduralActions]
+      operationId: updateProceduralAction
+      summary: Update a procedural action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProceduralActionUpdate'
+      responses:
+        '200':
+          description: Action updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProceduralAction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [ProceduralActions]
+      operationId: deleteProceduralAction
+      summary: Delete a procedural action
+      responses:
+        '204':
+          description: Action deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Resolutions ────────────────────────────────────────────────────────────
+  /expedientes/{expedienteId}/proceedings/{proceedingId}/resolutions:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - $ref: '#/components/parameters/ProceedingIdParam'
+    get:
+      tags: [Resolutions]
+      operationId: listResolutions
+      summary: List resolutions in a proceeding
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Resolution list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResolutionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Resolutions]
+      operationId: createResolution
+      summary: Record a court resolution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolutionCreate'
+      responses:
+        '201':
+          description: Resolution recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resolution'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}/proceedings/{proceedingId}/resolutions/{resolutionId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - $ref: '#/components/parameters/ProceedingIdParam'
+      - name: resolutionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Resolutions]
+      operationId: updateResolution
+      summary: Update a resolution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolutionUpdate'
+      responses:
+        '200':
+          description: Resolution updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resolution'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Hearings (proceeding sub-resource) ─────────────────────────────────────
+  /expedientes/{expedienteId}/proceedings/{proceedingId}/hearings:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - $ref: '#/components/parameters/ProceedingIdParam'
+    get:
+      tags: [Hearings]
+      operationId: listProceedingHearings
+      summary: List hearings in a proceeding
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Hearing list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHearingList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Hearings]
+      operationId: scheduleHearing
+      summary: Schedule a hearing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HearingCreate'
+      responses:
+        '201':
+          description: Hearing scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hearing'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}/proceedings/{proceedingId}/hearings/{hearingId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - $ref: '#/components/parameters/ProceedingIdParam'
+      - name: hearingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Hearings]
+      operationId: updateHearing
+      summary: Update a hearing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HearingUpdate'
+      responses:
+        '200':
+          description: Hearing updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hearing'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Hearings (cross-expediente) ────────────────────────────────────────────
+  /hearings:
+    get:
+      tags: [Hearings]
+      operationId: listAllHearings
+      summary: List all hearings across expedientes (calendar view)
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: dateAfter
+          in: query
+          description: Filter hearings on or after this date (ISO 8601)
+          schema:
+            type: string
+            format: date
+        - name: dateBefore
+          in: query
+          description: Filter hearings on or before this date (ISO 8601)
+          schema:
+            type: string
+            format: date
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/HearingStatus'
+        - name: assigneeId
+          in: query
+          description: Filter by expediente assignee
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated hearing list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHearingList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /hearings/{hearingId}:
+    parameters:
+      - name: hearingId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Hearings]
+      operationId: getHearing
+      summary: Get a hearing by ID
+      responses:
+        '200':
+          description: Hearing details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hearing'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Deadlines (expediente sub-resource) ────────────────────────────────────
+  /expedientes/{expedienteId}/deadlines:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+    get:
+      tags: [Deadlines]
+      operationId: listExpedienteDeadlines
+      summary: List deadlines for an expediente
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DeadlineStatus'
+      responses:
+        '200':
+          description: Deadline list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDeadlineList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Deadlines]
+      operationId: createDeadline
+      summary: Create a deadline for the expediente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeadlineCreate'
+      responses:
+        '201':
+          description: Deadline created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deadline'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Deadlines (cross-expediente) ───────────────────────────────────────────
+  /deadlines:
+    get:
+      tags: [Deadlines]
+      operationId: listAllDeadlines
+      summary: List all deadlines across expedientes
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DeadlineStatus'
+        - name: dueAfter
+          in: query
+          description: Filter deadlines due on or after this date
+          schema:
+            type: string
+            format: date
+        - name: dueBefore
+          in: query
+          description: Filter deadlines due on or before this date
+          schema:
+            type: string
+            format: date
+        - name: responsibleId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/DeadlineType'
+      responses:
+        '200':
+          description: Paginated deadline list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDeadlineList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /deadlines/{deadlineId}:
+    parameters:
+      - name: deadlineId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Deadlines]
+      operationId: getDeadline
+      summary: Get a deadline by ID
+      responses:
+        '200':
+          description: Deadline details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deadline'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Deadlines]
+      operationId: updateDeadline
+      summary: Update a deadline (e.g., mark completed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeadlineUpdate'
+      responses:
+        '200':
+          description: Deadline updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deadline'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Document Requests ──────────────────────────────────────────────────────
+  /expedientes/{expedienteId}/document-requests:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+    get:
+      tags: [DocumentRequests]
+      operationId: listDocumentRequests
+      summary: List document requests for an expediente
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DocumentRequestStatus'
+      responses:
+        '200':
+          description: Document request list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDocumentRequestList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [DocumentRequests]
+      operationId: createDocumentRequest
+      summary: Create a document request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentRequestCreate'
+      responses:
+        '201':
+          description: Document request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}/document-requests/{requestId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - name: requestId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [DocumentRequests]
+      operationId: updateDocumentRequest
+      summary: Update a document request (accept, reject, etc.)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentRequestUpdate'
+      responses:
+        '200':
+          description: Document request updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /expedientes/{expedienteId}/document-requests/{requestId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+      - name: requestId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [DocumentRequests]
+      operationId: uploadDocumentToRequest
+      summary: Upload a document to a request
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Document uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Documents ──────────────────────────────────────────────────────────────
+  /documents/upload:
+    post:
+      tags: [Documents]
+      operationId: uploadDocument
+      summary: Upload a standalone document
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, requestId]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                requestId:
+                  type: string
+                  format: uuid
+                  description: The document request this file fulfills
+      responses:
+        '201':
+          description: Document uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /documents/{documentId}:
+    parameters:
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Documents]
+      operationId: getDocument
+      summary: Get document metadata
+      responses:
+        '200':
+          description: Document metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /documents/{documentId}/download:
+    parameters:
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Documents]
+      operationId: downloadDocument
+      summary: Download the document file
+      responses:
+        '200':
+          description: File content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Messages ───────────────────────────────────────────────────────────────
+  /expedientes/{expedienteId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ExpedienteIdParam'
+    get:
+      tags: [Messages]
+      operationId: listMessages
+      summary: List messages in an expediente
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Message list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMessageList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Messages]
+      operationId: sendMessage
+      summary: Send a message in an expediente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageCreate'
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── Appointments ───────────────────────────────────────────────────────────
+  /appointments:
+    get:
+      tags: [Appointments]
+      operationId: listAppointments
+      summary: List appointments
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: dateAfter
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateBefore
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/AppointmentStatus'
+        - name: memberId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: clientId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated appointment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAppointmentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Appointments]
+      operationId: createAppointment
+      summary: Schedule an appointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentCreate'
+      responses:
+        '201':
+          description: Appointment scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /appointments/{appointmentId}:
+    parameters:
+      - name: appointmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Appointments]
+      operationId: getAppointment
+      summary: Get an appointment by ID
+      responses:
+        '200':
+          description: Appointment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Appointments]
+      operationId: updateAppointment
+      summary: Update an appointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentUpdate'
+      responses:
+        '200':
+          description: Appointment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Appointments]
+      operationId: cancelAppointment
+      summary: Cancel an appointment
+      responses:
+        '204':
+          description: Appointment cancelled
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Notifications ──────────────────────────────────────────────────────────
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List notifications for the current member
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: read
+          in: query
+          description: Filter by read status
+          schema:
+            type: boolean
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/NotificationType'
+      responses:
+        '200':
+          description: Paginated notification list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications/{notificationId}:
+    parameters:
+      - name: notificationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Notifications]
+      operationId: updateNotification
+      summary: Mark a notification as read or unread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [read]
+              properties:
+                read:
+                  type: boolean
+      responses:
+        '200':
+          description: Notification updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Time Entries ───────────────────────────────────────────────────────────
+  /time-entries:
+    get:
+      tags: [TimeEntries]
+      operationId: listTimeEntries
+      summary: List time entries
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: expedienteId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: memberId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: dateAfter
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateBefore
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: billable
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated time entry list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTimeEntryList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [TimeEntries]
+      operationId: createTimeEntry
+      summary: Log a time entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeEntryCreate'
+      responses:
+        '201':
+          description: Time entry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /time-entries/{timeEntryId}:
+    parameters:
+      - name: timeEntryId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [TimeEntries]
+      operationId: getTimeEntry
+      summary: Get a time entry by ID
+      responses:
+        '200':
+          description: Time entry details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [TimeEntries]
+      operationId: updateTimeEntry
+      summary: Update a time entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeEntryUpdate'
+      responses:
+        '200':
+          description: Time entry updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [TimeEntries]
+      operationId: deleteTimeEntry
+      summary: Delete a time entry
+      responses:
+        '204':
+          description: Time entry deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Invoices ───────────────────────────────────────────────────────────────
+  /invoices:
+    get:
+      tags: [Invoices]
+      operationId: listInvoices
+      summary: List invoices
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: clientId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: expedienteId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: paymentStatus
+          in: query
+          schema:
+            $ref: '#/components/schemas/PaymentStatus'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/InvoiceType'
+        - name: issueDateAfter
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: issueDateBefore
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Paginated invoice list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInvoiceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Invoices]
+      operationId: createInvoice
+      summary: Create an invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreate'
+      responses:
+        '201':
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /invoices/{invoiceId}:
+    parameters:
+      - name: invoiceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Invoices]
+      operationId: getInvoice
+      summary: Get an invoice by ID
+      responses:
+        '200':
+          description: Invoice details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Invoices]
+      operationId: updateInvoice
+      summary: Update an invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceUpdate'
+      responses:
+        '200':
+          description: Invoice updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Invoices]
+      operationId: voidInvoice
+      summary: Void an invoice
+      responses:
+        '204':
+          description: Invoice voided
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
+  /dashboard/partner:
+    get:
+      tags: [Dashboard]
+      operationId: getPartnerDashboard
+      summary: Get partner dashboard data
+      description: |
+        Aggregated view for managing partners: firm-wide expediente counts by
+        status, upcoming deadlines, revenue summary, workload distribution
+        across associates, and overdue items.
+      responses:
+        '200':
+          description: Partner dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerDashboard'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /dashboard/associate:
+    get:
+      tags: [Dashboard]
+      operationId: getAssociateDashboard
+      summary: Get associate dashboard data
+      description: |
+        Personal view for associates: assigned expedientes, upcoming deadlines,
+        today's appointments, pending document requests, unread notifications,
+        and recent messages.
+      responses:
+        '200':
+          description: Associate dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssociateDashboard'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+# ── Components ─────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token obtained from POST /auth/login or POST /auth/refresh
+
+  parameters:
+    CursorParam:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor from a previous response
+      schema:
+        type: string
+    LimitParam:
+      name: limit
+      in: query
+      description: Number of items per page (max 100)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    ExpedienteIdParam:
+      name: expedienteId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProceedingIdParam:
+      name: proceedingId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MemberIdParam:
+      name: memberId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ClientIdParam:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Conflict:
+      description: Resource conflict (e.g., duplicate)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetail'
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+  schemas:
+    # ── Pagination ─────────────────────────────────────────────────────────
+    PaginationMeta:
+      type: object
+      required: [hasMore]
+      properties:
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page (absent if no more results)
+        hasMore:
+          type: boolean
+
+    # ── Error Schemas (RFC 7807) ───────────────────────────────────────────
+    ProblemDetail:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI identifying the error type
+          example: https://api.practicedesk.app/errors/not-found
+        title:
+          type: string
+          example: Not Found
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: The requested resource was not found.
+        instance:
+          type: string
+          description: URI of the request that caused the error
+
+    ValidationProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+
+    # ── Auth ───────────────────────────────────────────────────────────────
+    AuthTokenResponse:
+      type: object
+      required: [accessToken, expiresIn, tokenType]
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Seconds until the access token expires
+          example: 900
+        tokenType:
+          type: string
+          example: Bearer
+
+    # ── Enums ──────────────────────────────────────────────────────────────
+    MemberRole:
+      type: string
+      enum: [managing_partner, associate, paralegal, office_admin]
+
+    ClientType:
+      type: string
+      enum: [individual, freelancer, sme, company]
+
+    ExpedienteStatus:
+      type: string
+      enum: [open, in_progress, pending_resolution, closed, archived]
+
+    Jurisdiction:
+      type: string
+      enum: [civil, criminal, labor, administrative, commercial]
+
+    BillingModel:
+      type: string
+      enum: [hourly, fixed_fee, retainer, mixed, success_fee]
+
+    ProceduralPhase:
+      type: string
+      enum:
+        [filing, admission, discovery, preliminary_hearing, trial, sentencing, appeal, execution]
+
+    PartyRole:
+      type: string
+      enum: [plaintiff, defendant, co_defendant, third_party, private_prosecutor, accused]
+
+    ResolutionType:
+      type: string
+      enum: [sentencia, auto, providencia, decreto]
+
+    HearingType:
+      type: string
+      enum: [preliminary_hearing, main_hearing, oral_trial, appearance, ratification]
+
+    HearingStatus:
+      type: string
+      enum: [scheduled, completed, suspended, postponed]
+
+    DeadlineType:
+      type: string
+      enum: [procedural, prescription, expiration, internal]
+
+    DeadlineStatus:
+      type: string
+      enum: [pending, completed, overdue]
+
+    DeadlineConsequence:
+      type: string
+      enum: [preclusion, case_abandonment, prescription_expiry, none]
+
+    ProceduralActionStatus:
+      type: string
+      enum: [pending, completed, overdue]
+
+    DocumentRequestStatus:
+      type: string
+      enum: [pending, submitted, accepted, rejected]
+
+    AppointmentType:
+      type: string
+      enum: [consultation, follow_up, signing]
+
+    AppointmentLocation:
+      type: string
+      enum: [office, remote, client_site]
+
+    AppointmentStatus:
+      type: string
+      enum: [scheduled, confirmed, reschedule_requested, completed, cancelled]
+
+    MessageSenderType:
+      type: string
+      enum: [member, client]
+
+    NotificationType:
+      type: string
+      enum:
+        - document_submitted
+        - document_rejected
+        - deadline_reminder
+        - hearing_reminder
+        - appointment_reminder
+        - reschedule_request
+        - all_documents_complete
+        - new_message
+        - new_resolution
+
+    InvoiceType:
+      type: string
+      enum: [fee_note, final_invoice, proforma, advance_payment, expenses_note]
+
+    PaymentStatus:
+      type: string
+      enum: [unpaid, partial, paid, overdue]
+
+    FirmSector:
+      type: string
+      enum: [legal, tax, labor]
+
+    UserRole:
+      type: string
+      enum: [member, client]
+
+    # ── Entity Schemas ─────────────────────────────────────────────────────
+
+    # Firm
+    Firm:
+      type: object
+      required: [id, name, sector, email, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        taxId:
+          type: string
+          description: NIF/CIF
+        sector:
+          $ref: '#/components/schemas/FirmSector'
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FirmUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        taxId:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+
+    # Member
+    Member:
+      type: object
+      required: [id, firmId, userId, role, firstName, lastName, email, active, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/MemberRole'
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        barNumber:
+          type: string
+          description: Numero de colegiado
+        barAssociation:
+          type: string
+          description: Colegio de abogados
+        supervisorId:
+          type: string
+          format: uuid
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MemberCreate:
+      type: object
+      required: [role, firstName, lastName, email]
+      properties:
+        role:
+          $ref: '#/components/schemas/MemberRole'
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        barNumber:
+          type: string
+        barAssociation:
+          type: string
+        supervisorId:
+          type: string
+          format: uuid
+
+    MemberUpdate:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/MemberRole'
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        barNumber:
+          type: string
+        barAssociation:
+          type: string
+        supervisorId:
+          type: string
+          format: uuid
+        active:
+          type: boolean
+
+    PaginatedMemberList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Client
+    Client:
+      type: object
+      required: [id, firmId, firstName, lastName, email, active, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        taxId:
+          type: string
+          description: NIF/CIF
+        legalName:
+          type: string
+          description: Registered legal name (if company)
+        address:
+          type: string
+        type:
+          $ref: '#/components/schemas/ClientType'
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ClientCreate:
+      type: object
+      required: [firstName, lastName, email]
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        taxId:
+          type: string
+        legalName:
+          type: string
+        address:
+          type: string
+        type:
+          $ref: '#/components/schemas/ClientType'
+
+    ClientUpdate:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        taxId:
+          type: string
+        legalName:
+          type: string
+        address:
+          type: string
+        type:
+          $ref: '#/components/schemas/ClientType'
+        active:
+          type: boolean
+
+    PaginatedClientList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Client'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Expediente
+    Expediente:
+      type: object
+      required:
+        [
+          id,
+          firmId,
+          clientId,
+          assigneeId,
+          reference,
+          title,
+          jurisdiction,
+          status,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+          format: uuid
+        assigneeId:
+          type: string
+          format: uuid
+          description: Lead associate (Member ID)
+        reference:
+          type: string
+          description: Internal reference (e.g., "2026/0042")
+          example: '2026/0042'
+        title:
+          type: string
+          description: Brief descriptive title
+        description:
+          type: string
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        matterType:
+          type: string
+          description: Subtype (ordinario, verbal, monitorio, etc.)
+        status:
+          $ref: '#/components/schemas/ExpedienteStatus'
+        courtId:
+          type: string
+          format: uuid
+        courtAgentId:
+          type: string
+          format: uuid
+          description: Assigned procurador
+        caseNumber:
+          type: string
+          description: Court case number (numero de autos)
+        amount:
+          type: number
+          format: double
+          description: Amount in dispute (cuantia) in EUR
+        billingModel:
+          $ref: '#/components/schemas/BillingModel'
+        parentId:
+          type: string
+          format: uuid
+          description: Parent expediente (for related cases)
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ExpedienteCreate:
+      type: object
+      required: [clientId, assigneeId, reference, title, jurisdiction]
+      properties:
+        clientId:
+          type: string
+          format: uuid
+        assigneeId:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        matterType:
+          type: string
+        courtId:
+          type: string
+          format: uuid
+        courtAgentId:
+          type: string
+          format: uuid
+        caseNumber:
+          type: string
+        amount:
+          type: number
+          format: double
+        billingModel:
+          $ref: '#/components/schemas/BillingModel'
+        parentId:
+          type: string
+          format: uuid
+
+    ExpedienteUpdate:
+      type: object
+      properties:
+        assigneeId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        matterType:
+          type: string
+        status:
+          $ref: '#/components/schemas/ExpedienteStatus'
+        courtId:
+          type: string
+          format: uuid
+        courtAgentId:
+          type: string
+          format: uuid
+        caseNumber:
+          type: string
+        amount:
+          type: number
+          format: double
+        billingModel:
+          $ref: '#/components/schemas/BillingModel'
+
+    PaginatedExpedienteList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Expediente'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Court
+    Court:
+      type: object
+      required:
+        [
+          id,
+          firmId,
+          name,
+          type,
+          jurisdiction,
+          judicialDistrict,
+          province,
+          active,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: 'Juzgado de Primera Instancia n.3 de Madrid'
+        type:
+          type: string
+          description: Court type (Primera Instancia, Instruccion, Mercantil, etc.)
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        judicialDistrict:
+          type: string
+          description: Partido judicial
+        province:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CourtCreate:
+      type: object
+      required: [name, type, jurisdiction, judicialDistrict, province]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        judicialDistrict:
+          type: string
+        province:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+
+    CourtUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        judicialDistrict:
+          type: string
+        province:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        active:
+          type: boolean
+
+    PaginatedCourtList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Court'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # CourtAgent (Procurador)
+    CourtAgent:
+      type: object
+      required: [id, firmId, firstName, lastName, active, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        barNumber:
+          type: string
+          description: Numero de colegiado
+        barAssociation:
+          type: string
+          description: Colegio de Procuradores
+        judicialDistricts:
+          type: array
+          items:
+            type: string
+          description: Partidos judiciales where they operate
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CourtAgentCreate:
+      type: object
+      required: [firstName, lastName]
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        barNumber:
+          type: string
+        barAssociation:
+          type: string
+        judicialDistricts:
+          type: array
+          items:
+            type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+
+    CourtAgentUpdate:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        barNumber:
+          type: string
+        barAssociation:
+          type: string
+        judicialDistricts:
+          type: array
+          items:
+            type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        active:
+          type: boolean
+
+    PaginatedCourtAgentList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourtAgent'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Party
+    Party:
+      type: object
+      required: [id, expedienteId, name, role, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/PartyRole'
+        clientId:
+          type: string
+          format: uuid
+          description: If the party is also a Client in the system
+        taxId:
+          type: string
+          description: NIF/CIF
+        opposingCounsel:
+          type: string
+          description: Name of opposing lawyer
+        opposingCourtAgent:
+          type: string
+          description: Name of opposing procurador
+        createdAt:
+          type: string
+          format: date-time
+
+    PartyCreate:
+      type: object
+      required: [name, role]
+      properties:
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/PartyRole'
+        clientId:
+          type: string
+          format: uuid
+        taxId:
+          type: string
+        opposingCounsel:
+          type: string
+        opposingCourtAgent:
+          type: string
+
+    PartyUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/PartyRole'
+        clientId:
+          type: string
+          format: uuid
+        taxId:
+          type: string
+        opposingCounsel:
+          type: string
+        opposingCourtAgent:
+          type: string
+
+    PaginatedPartyList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Party'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Proceeding
+    Proceeding:
+      type: object
+      required: [id, expedienteId, type, phase, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          description: Tipo de procedimiento (ordinario, verbal, monitorio, etc.)
+        caseNumber:
+          type: string
+          description: Court case number for this specific proceeding
+        courtId:
+          type: string
+          format: uuid
+        phase:
+          $ref: '#/components/schemas/ProceduralPhase'
+        previousProceedingId:
+          type: string
+          format: uuid
+          description: Links to prior instance (appeal chain)
+        filingDate:
+          type: string
+          format: date
+        resolutionDate:
+          type: string
+          format: date
+        outcome:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProceedingCreate:
+      type: object
+      required: [type, phase]
+      properties:
+        type:
+          type: string
+        caseNumber:
+          type: string
+        courtId:
+          type: string
+          format: uuid
+        phase:
+          $ref: '#/components/schemas/ProceduralPhase'
+        previousProceedingId:
+          type: string
+          format: uuid
+        filingDate:
+          type: string
+          format: date
+
+    ProceedingUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+        caseNumber:
+          type: string
+        courtId:
+          type: string
+          format: uuid
+        phase:
+          $ref: '#/components/schemas/ProceduralPhase'
+        resolutionDate:
+          type: string
+          format: date
+        outcome:
+          type: string
+
+    PaginatedProceedingList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Proceeding'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ProceduralAction
+    ProceduralAction:
+      type: object
+      required: [id, proceedingId, type, date, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        proceedingId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          description: Action type (demanda, contestacion, prueba, sentencia, recurso, etc.)
+        date:
+          type: string
+          format: date
+        notificationDate:
+          type: string
+          format: date
+          description: When notified (for court actions)
+        description:
+          type: string
+        responsibleId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ProceduralActionStatus'
+        createdAt:
+          type: string
+          format: date-time
+
+    ProceduralActionCreate:
+      type: object
+      required: [type, date, status]
+      properties:
+        type:
+          type: string
+        date:
+          type: string
+          format: date
+        notificationDate:
+          type: string
+          format: date
+        description:
+          type: string
+        responsibleId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ProceduralActionStatus'
+
+    ProceduralActionUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+        date:
+          type: string
+          format: date
+        notificationDate:
+          type: string
+          format: date
+        description:
+          type: string
+        responsibleId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ProceduralActionStatus'
+
+    PaginatedProceduralActionList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProceduralAction'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Resolution
+    Resolution:
+      type: object
+      required: [id, proceedingId, type, date, isFinal, isAppealable, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        proceedingId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/ResolutionType'
+        date:
+          type: string
+          format: date
+        notificationDate:
+          type: string
+          format: date
+        ruling:
+          type: string
+          description: The fallo / parte dispositiva
+        isFinal:
+          type: boolean
+          description: Whether firme (res judicata)
+        isAppealable:
+          type: boolean
+          description: Whether recurrible
+        appealType:
+          type: string
+          description: Available appeal type
+        appealDeadlineDays:
+          type: integer
+          description: Days to file appeal
+        documentId:
+          type: string
+          format: uuid
+          description: Full text document ID
+        createdAt:
+          type: string
+          format: date-time
+
+    ResolutionCreate:
+      type: object
+      required: [type, date, isFinal, isAppealable]
+      properties:
+        type:
+          $ref: '#/components/schemas/ResolutionType'
+        date:
+          type: string
+          format: date
+        notificationDate:
+          type: string
+          format: date
+        ruling:
+          type: string
+        isFinal:
+          type: boolean
+        isAppealable:
+          type: boolean
+        appealType:
+          type: string
+        appealDeadlineDays:
+          type: integer
+        documentId:
+          type: string
+          format: uuid
+
+    ResolutionUpdate:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/ResolutionType'
+        date:
+          type: string
+          format: date
+        notificationDate:
+          type: string
+          format: date
+        ruling:
+          type: string
+        isFinal:
+          type: boolean
+        isAppealable:
+          type: boolean
+        appealType:
+          type: string
+        appealDeadlineDays:
+          type: integer
+        documentId:
+          type: string
+          format: uuid
+
+    PaginatedResolutionList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resolution'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Hearing
+    Hearing:
+      type: object
+      required: [id, proceedingId, type, dateTime, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        proceedingId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/HearingType'
+        dateTime:
+          type: string
+          format: date-time
+          description: Scheduled date and time
+        courtId:
+          type: string
+          format: uuid
+        courtroom:
+          type: string
+          description: Sala number
+        estimatedDuration:
+          type: integer
+          description: Duration in minutes
+        status:
+          $ref: '#/components/schemas/HearingStatus'
+        outcome:
+          type: string
+          description: Result summary
+        notes:
+          type: string
+          description: Preparation or outcome notes
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    HearingCreate:
+      type: object
+      required: [type, dateTime]
+      properties:
+        type:
+          $ref: '#/components/schemas/HearingType'
+        dateTime:
+          type: string
+          format: date-time
+        courtId:
+          type: string
+          format: uuid
+        courtroom:
+          type: string
+        estimatedDuration:
+          type: integer
+        notes:
+          type: string
+
+    HearingUpdate:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/HearingType'
+        dateTime:
+          type: string
+          format: date-time
+        courtId:
+          type: string
+          format: uuid
+        courtroom:
+          type: string
+        estimatedDuration:
+          type: integer
+        status:
+          $ref: '#/components/schemas/HearingStatus'
+        outcome:
+          type: string
+        notes:
+          type: string
+
+    PaginatedHearingList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Hearing'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Deadline
+    Deadline:
+      type: object
+      required:
+        [
+          id,
+          expedienteId,
+          type,
+          description,
+          startDate,
+          dueDate,
+          workingDays,
+          durationDays,
+          responsibleId,
+          status,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        proceedingId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/DeadlineType'
+        description:
+          type: string
+          description: What must be done
+        startDate:
+          type: string
+          format: date
+          description: When deadline starts counting
+        dueDate:
+          type: string
+          format: date
+          description: Calculated due date
+        workingDays:
+          type: boolean
+          description: Whether counted in dias habiles
+        durationDays:
+          type: integer
+          description: Number of days (for calculation audit)
+        consequence:
+          $ref: '#/components/schemas/DeadlineConsequence'
+        responsibleId:
+          type: string
+          format: uuid
+          description: Assigned member
+        status:
+          $ref: '#/components/schemas/DeadlineStatus'
+        completedAt:
+          type: string
+          format: date-time
+        completionEvidence:
+          type: string
+          description: Proof (e.g., LexNET receipt number)
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DeadlineCreate:
+      type: object
+      required: [type, description, startDate, dueDate, workingDays, durationDays, responsibleId]
+      properties:
+        proceedingId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/DeadlineType'
+        description:
+          type: string
+        startDate:
+          type: string
+          format: date
+        dueDate:
+          type: string
+          format: date
+        workingDays:
+          type: boolean
+        durationDays:
+          type: integer
+        consequence:
+          $ref: '#/components/schemas/DeadlineConsequence'
+        responsibleId:
+          type: string
+          format: uuid
+
+    DeadlineUpdate:
+      type: object
+      properties:
+        description:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        responsibleId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/DeadlineStatus'
+        completionEvidence:
+          type: string
+
+    PaginatedDeadlineList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deadline'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # DocumentRequest
+    DocumentRequest:
+      type: object
+      required: [id, expedienteId, title, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          description: 'E.g., ID card, Tax certificate'
+        description:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/DocumentRequestStatus'
+        rejectionReason:
+          type: string
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DocumentRequestCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        dueDate:
+          type: string
+          format: date
+
+    DocumentRequestUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/DocumentRequestStatus'
+        rejectionReason:
+          type: string
+
+    PaginatedDocumentRequestList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentRequest'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Document
+    Document:
+      type: object
+      required: [id, requestId, fileName, mimeType, sizeBytes, storagePath, uploadedBy, uploadedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        mimeType:
+          type: string
+          example: application/pdf
+        sizeBytes:
+          type: integer
+        storagePath:
+          type: string
+        uploadedBy:
+          type: string
+          format: uuid
+        uploadedAt:
+          type: string
+          format: date-time
+
+    # Appointment
+    Appointment:
+      type: object
+      required:
+        [
+          id,
+          firmId,
+          clientId,
+          memberId,
+          scheduledBy,
+          date,
+          startTime,
+          duration,
+          type,
+          location,
+          status,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        scheduledBy:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+          description: Start time (HH:mm)
+          example: '10:30'
+        duration:
+          type: integer
+          description: Duration in minutes
+        type:
+          $ref: '#/components/schemas/AppointmentType'
+        location:
+          $ref: '#/components/schemas/AppointmentLocation'
+        notes:
+          type: string
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AppointmentCreate:
+      type: object
+      required: [clientId, memberId, date, startTime, duration, type, location]
+      properties:
+        expedienteId:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+        duration:
+          type: integer
+        type:
+          $ref: '#/components/schemas/AppointmentType'
+        location:
+          $ref: '#/components/schemas/AppointmentLocation'
+        notes:
+          type: string
+
+    AppointmentUpdate:
+      type: object
+      properties:
+        expedienteId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+        duration:
+          type: integer
+        type:
+          $ref: '#/components/schemas/AppointmentType'
+        location:
+          $ref: '#/components/schemas/AppointmentLocation'
+        notes:
+          type: string
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+
+    PaginatedAppointmentList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Message
+    Message:
+      type: object
+      required: [id, expedienteId, senderId, senderType, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          format: uuid
+        senderType:
+          $ref: '#/components/schemas/MessageSenderType'
+        body:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    MessageCreate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+
+    PaginatedMessageList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Notification
+    Notification:
+      type: object
+      required: [id, memberId, type, title, read, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        title:
+          type: string
+        body:
+          type: string
+        referenceId:
+          type: string
+          format: uuid
+        referenceType:
+          type: string
+          description: Entity type (expediente, appointment, document_request, hearing, deadline)
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    PaginatedNotificationList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # TimeEntry
+    TimeEntry:
+      type: object
+      required:
+        [id, expedienteId, memberId, date, durationMinutes, description, billable, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        durationMinutes:
+          type: integer
+          description: Duration in minutes
+        description:
+          type: string
+        billable:
+          type: boolean
+        hourlyRate:
+          type: number
+          format: double
+          description: Rate applied (EUR/hour)
+        invoiceId:
+          type: string
+          format: uuid
+          description: If already invoiced
+        createdAt:
+          type: string
+          format: date-time
+
+    TimeEntryCreate:
+      type: object
+      required: [expedienteId, date, durationMinutes, description]
+      properties:
+        expedienteId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        durationMinutes:
+          type: integer
+        description:
+          type: string
+        billable:
+          type: boolean
+          default: true
+        hourlyRate:
+          type: number
+          format: double
+
+    TimeEntryUpdate:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        durationMinutes:
+          type: integer
+        description:
+          type: string
+        billable:
+          type: boolean
+        hourlyRate:
+          type: number
+          format: double
+
+    PaginatedTimeEntryList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Invoice
+    Invoice:
+      type: object
+      required:
+        [
+          id,
+          firmId,
+          clientId,
+          invoiceNumber,
+          type,
+          issueDate,
+          concept,
+          taxableBase,
+          vatRate,
+          vatAmount,
+          totalAmount,
+          paymentStatus,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firmId:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        invoiceNumber:
+          type: string
+          description: Sequential number (VeriFactu compliant)
+          example: '2026/F-0001'
+        type:
+          $ref: '#/components/schemas/InvoiceType'
+        issueDate:
+          type: string
+          format: date
+        concept:
+          type: string
+          description: Description of services
+        taxableBase:
+          type: number
+          format: double
+          description: Base imponible (EUR)
+        vatRate:
+          type: number
+          format: double
+          description: IVA rate (e.g., 21.0)
+          example: 21.0
+        vatAmount:
+          type: number
+          format: double
+          description: IVA amount (EUR)
+        irpfRate:
+          type: number
+          format: double
+          description: IRPF retention rate (15% or 7%)
+        irpfAmount:
+          type: number
+          format: double
+          description: IRPF amount (EUR)
+        totalAmount:
+          type: number
+          format: double
+          description: Total (EUR)
+        paymentStatus:
+          $ref: '#/components/schemas/PaymentStatus'
+        paidAt:
+          type: string
+          format: date-time
+        verifactuQr:
+          type: string
+          description: VeriFactu QR code data
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    InvoiceCreate:
+      type: object
+      required: [clientId, type, issueDate, concept, taxableBase, vatRate]
+      properties:
+        clientId:
+          type: string
+          format: uuid
+        expedienteId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/InvoiceType'
+        issueDate:
+          type: string
+          format: date
+        concept:
+          type: string
+        taxableBase:
+          type: number
+          format: double
+        vatRate:
+          type: number
+          format: double
+        irpfRate:
+          type: number
+          format: double
+        timeEntryIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Time entries to include in the invoice
+
+    InvoiceUpdate:
+      type: object
+      properties:
+        concept:
+          type: string
+        taxableBase:
+          type: number
+          format: double
+        vatRate:
+          type: number
+          format: double
+        irpfRate:
+          type: number
+          format: double
+        paymentStatus:
+          $ref: '#/components/schemas/PaymentStatus'
+
+    PaginatedInvoiceList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invoice'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Dashboard
+    PartnerDashboard:
+      type: object
+      required:
+        [expedientesByStatus, upcomingDeadlines, revenueThisMonth, workloadByAssignee, overdueItems]
+      properties:
+        expedientesByStatus:
+          type: object
+          description: Count of expedientes per status
+          additionalProperties:
+            type: integer
+          example:
+            open: 5
+            in_progress: 23
+            pending_resolution: 8
+            closed: 42
+        upcomingDeadlines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deadline'
+          description: Next 10 approaching deadlines across the firm
+        revenueThisMonth:
+          type: object
+          properties:
+            invoiced:
+              type: number
+              format: double
+            collected:
+              type: number
+              format: double
+            outstanding:
+              type: number
+              format: double
+        workloadByAssignee:
+          type: array
+          items:
+            type: object
+            properties:
+              memberId:
+                type: string
+                format: uuid
+              memberName:
+                type: string
+              activeExpedientes:
+                type: integer
+              pendingDeadlines:
+                type: integer
+        overdueItems:
+          type: object
+          properties:
+            deadlines:
+              type: integer
+            invoices:
+              type: integer
+
+    AssociateDashboard:
+      type: object
+      required:
+        [
+          myExpedientes,
+          upcomingDeadlines,
+          todayAppointments,
+          pendingDocumentRequests,
+          unreadNotifications,
+          recentMessages,
+        ]
+      properties:
+        myExpedientes:
+          type: object
+          description: Count of assigned expedientes per status
+          additionalProperties:
+            type: integer
+        upcomingDeadlines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deadline'
+          description: Next 10 deadlines assigned to this member
+        todayAppointments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+        pendingDocumentRequests:
+          type: integer
+          description: Count of pending document requests across assigned expedientes
+        unreadNotifications:
+          type: integer
+        recentMessages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+          description: Latest 5 unread messages
+
+    # User (not exposed directly but referenced)
+    User:
+      type: object
+      required: [id, email, role, active, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/UserRole'
+        active:
+          type: boolean
+        lastLoginAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

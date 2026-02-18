@@ -1,0 +1,79 @@
+%% F1 — Expediente Lifecycle Flow Diagram
+%% Full lifecycle from client intake to archive, showing decision points
+
+flowchart TD
+    START(["Client contacts<br/>the firm"]) --> INTAKE["Client intake meeting<br/>(consulta inicial)"]
+
+    INTAKE --> ACCEPT{Accept case?}
+    ACCEPT -- No --> DECLINE["Decline / refer<br/>to another firm"]
+    DECLINE --> END_DECLINE(["End"])
+
+    ACCEPT -- Yes --> ENCARGO["Sign hoja de encargo<br/>(engagement letter)"]
+    ENCARGO --> CREATE["Create expediente<br/>Status: open"]
+
+    CREATE --> ASSIGN_TEAM["Assign lead associate<br/>+ paralegal support"]
+    ASSIGN_TEAM --> ASSIGN_COURT{Court<br/>assignment<br/>needed?}
+
+    ASSIGN_COURT -- Yes --> SELECT_COURT["Select juzgado<br/>+ assign procurador"]
+    ASSIGN_COURT -- No --> COLLECT_DOCS
+
+    SELECT_COURT --> COLLECT_DOCS["Create document<br/>requests for client"]
+    COLLECT_DOCS --> DOCS_COMPLETE{All documents<br/>received &<br/>accepted?}
+    DOCS_COMPLETE -- No --> WAIT_DOCS["Await client uploads<br/>(send reminders)"]
+    WAIT_DOCS --> DOCS_COMPLETE
+
+    DOCS_COMPLETE -- Yes --> ACTIVATE["Move to in_progress<br/>Status: en tramite"]
+
+    ACTIVATE --> PROCEEDING["Create proceeding<br/>(procedimiento)"]
+    PROCEEDING --> FILE_CLAIM["File demanda / escrito<br/>via LexNET"]
+
+    FILE_CLAIM --> TRACK["Track deadlines<br/>(plazos procesales)"]
+    TRACK --> ACTIONS["Record procedural actions<br/>(actuaciones procesales)"]
+
+    ACTIONS --> HEARING_NEEDED{Hearing<br/>scheduled?}
+    HEARING_NEEDED -- Yes --> PREPARE_HEARING["Prepare for vista /<br/>juicio oral"]
+    HEARING_NEEDED -- No --> RESOLUTION_CHECK
+
+    PREPARE_HEARING --> ATTEND_HEARING["Attend hearing"]
+    ATTEND_HEARING --> RESOLUTION_CHECK
+
+    RESOLUTION_CHECK --> PENDING["Move to pending_resolution<br/>Status: pendiente resolucion"]
+
+    PENDING --> SENTENCIA["Receive sentencia /<br/>resolucion judicial"]
+    SENTENCIA --> FAVORABLE{Favorable<br/>outcome?}
+
+    FAVORABLE -- Yes --> APPEAL_CHECK_FAV{Opposing party<br/>appeals?}
+    APPEAL_CHECK_FAV -- Yes --> DEFEND_APPEAL["Defend appeal<br/>(new proceeding)"]
+    DEFEND_APPEAL --> SENTENCIA
+    APPEAL_CHECK_FAV -- No --> EXECUTE{Execution<br/>needed?}
+
+    FAVORABLE -- No --> APPEAL_DECIDE{File appeal<br/>(recurso)?}
+    APPEAL_DECIDE -- Yes --> FILE_APPEAL["File recurso<br/>(new proceeding)"]
+    FILE_APPEAL --> SENTENCIA
+    APPEAL_DECIDE -- No --> CLOSE_CASE
+
+    EXECUTE -- Yes --> EXECUTION["Execution phase<br/>(ejecucion de sentencia)"]
+    EXECUTION --> CLOSE_CASE
+    EXECUTE -- No --> CLOSE_CASE
+
+    CLOSE_CASE["Close expediente<br/>Status: cerrado"]
+    CLOSE_CASE --> FINAL_INVOICE["Issue final invoice<br/>(factura definitiva /<br/>nota de honorarios)"]
+    FINAL_INVOICE --> VERIFACTU["Register with VeriFactu<br/>(AEAT)"]
+    VERIFACTU --> PAYMENT{Payment<br/>received?}
+    PAYMENT -- No --> FOLLOW_UP["Follow up /<br/>jura de cuentas"]
+    FOLLOW_UP --> PAYMENT
+    PAYMENT -- Yes --> ARCHIVE["Archive expediente<br/>Status: archivado"]
+    ARCHIVE --> END_OK(["End"])
+
+    %% Styles
+    classDef startEnd fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef process fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef decision fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef success fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef danger fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+
+    class START,END_DECLINE,END_OK startEnd
+    class INTAKE,ENCARGO,CREATE,ASSIGN_TEAM,SELECT_COURT,COLLECT_DOCS,WAIT_DOCS,ACTIVATE,PROCEEDING,FILE_CLAIM,TRACK,ACTIONS,PREPARE_HEARING,ATTEND_HEARING,PENDING,SENTENCIA,DEFEND_APPEAL,FILE_APPEAL,EXECUTION,FINAL_INVOICE,VERIFACTU,FOLLOW_UP process
+    class ACCEPT,ASSIGN_COURT,DOCS_COMPLETE,HEARING_NEEDED,FAVORABLE,APPEAL_CHECK_FAV,APPEAL_DECIDE,EXECUTE,PAYMENT decision
+    class CLOSE_CASE,ARCHIVE success
+    class DECLINE,RESOLUTION_CHECK danger

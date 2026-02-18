@@ -1,0 +1,204 @@
+@startuml seq-03-document-collection
+!include brand-palette.puml
+title Document Collection Workflow (Solicitud de Documentos)
+
+actor "Associate\n(Abogado)" as Associate
+participant "Frontend" as FE
+participant "API" as API
+participant "NotificationService" as NS
+actor "Client\n(Cliente)" as Client
+participant "Portal\n(Client Frontend)" as Portal
+database "Database" as DB
+
+== 1. Associate Creates Document Request ==
+
+Associate -> FE : Open expediente detail\n& click "Solicitar Documentos"
+activate FE
+FE --> Associate : Show document request form
+deactivate FE
+
+Associate -> FE : Define checklist:\n- DNI / NIE (ID card)\n- Contrato (contract)\n- Certificado fiscal\n  (tax certificate)\nSet due date for each
+activate FE
+
+FE -> API : POST /api/expedientes/{id}/document-requests\n[\n  { title: "DNI / NIE",\n    description: "Copia del documento\n    de identidad vigente",\n    dueDate: "2026-03-01" },\n  { title: "Contrato",\n    description: "Contrato original\n    firmado por ambas partes",\n    dueDate: "2026-03-01" },\n  { title: "Certificado Fiscal",\n    description: "Certificado de la\n    AEAT ultimo ejercicio",\n    dueDate: "2026-03-05" }\n]
+activate API
+
+API -> DB : INSERT document_requests[]\nstatus = 'pending' for each
+activate DB
+DB --> API : Requests created (3 items)
+deactivate DB
+
+API -> NS : notifyClient(clientId,\ntype='document_request_created',\nexpedienteRef)
+activate NS
+
+NS -> NS : Send email to client:\n"Tiene documentos pendientes\nde entregar para el\nexpediente {ref}"
+NS --> Client : Email with portal link
+NS --> API : Notification sent
+deactivate NS
+
+API --> FE : 201 Created\n{ documentRequests: [...] }
+deactivate API
+
+FE --> Associate : Show request list\nwith status = "Pendiente"
+deactivate FE
+
+== 2. Client Accesses Portal ==
+
+Client -> Portal : Click link in email\n& log in to portal
+activate Portal
+Portal -> API : GET /api/portal/document-requests\n?expedienteId={id}
+activate API
+API -> DB : SELECT document_requests\nWHERE expedienteId = ?\nAND clientId = ?
+activate DB
+DB --> API : Pending requests (3)
+deactivate DB
+API --> Portal : 200 OK — checklist
+deactivate API
+
+Portal --> Client : Show checklist:\n[ ] DNI / NIE\n[ ] Contrato\n[ ] Certificado Fiscal
+deactivate Portal
+
+== 3. Client Uploads Documents ==
+
+Client -> Portal : Upload file for\n"DNI / NIE"
+activate Portal
+Portal -> API : POST /api/documents\n{ requestId, file }\nmultipart/form-data
+activate API
+
+API -> API : Validate file:\n- size <= 10 MB\n- mimeType allowed\n  (pdf, jpg, png, docx)
+
+alt #CLAY_100 Validation fails
+    API --> Portal : 400 Bad Request\n"Archivo demasiado grande\no formato no permitido"
+    Portal --> Client : Show error:\n"El archivo excede 10 MB\no no es un formato valido"
+else #FERN_100 Validation passes
+    API -> DB : INSERT document\n(requestId, fileName,\nmimeType, sizeBytes,\nstoragePath, uploadedBy)
+    activate DB
+    DB --> API : Document stored
+    deactivate DB
+
+    API -> DB : UPDATE document_request\nSET status = 'submitted'\nWHERE id = ?
+    activate DB
+    DB --> API : Status updated
+    deactivate DB
+
+    API -> NS : notifyMember(assigneeId,\ntype='document_submitted',\ntitle='Documento entregado',\nbody='El cliente ha entregado:\nDNI / NIE')
+    activate NS
+    NS --> Associate : In-app + email notification
+    deactivate NS
+
+    API --> Portal : 201 Created
+    Portal --> Client : Show checkmark:\n[x] DNI / NIE
+end
+deactivate API
+deactivate Portal
+
+note right of Client
+  Client repeats upload
+  for remaining documents.
+end note
+
+== 4. Associate Reviews Document ==
+
+Associate -> FE : Open submitted document\nfor review
+activate FE
+FE -> API : GET /api/documents/{docId}
+activate API
+API --> FE : Document details + file URL
+deactivate API
+FE --> Associate : Show document preview
+deactivate FE
+
+loop For each submitted document
+
+    alt #FERN_100 Document Accepted
+        Associate -> FE : Click "Aceptar"
+        activate FE
+        FE -> API : PATCH /api/document-requests/{id}\n{ status: 'accepted' }
+        activate API
+        API -> DB : UPDATE document_request\nSET status = 'accepted'
+        activate DB
+        DB --> API : Updated
+        deactivate DB
+        API --> FE : 200 OK
+        deactivate API
+        FE --> Associate : Show status: "Aceptado"
+        deactivate FE
+
+    else #CLAY_100 Document Rejected
+        Associate -> FE : Click "Rechazar"\n& enter reason:\n"Documento ilegible,\npor favor envie copia\nen alta resolucion"
+        activate FE
+        FE -> API : PATCH /api/document-requests/{id}\n{ status: 'rejected',\n  rejectionReason: "Documento\n  ilegible..." }
+        activate API
+        API -> DB : UPDATE document_request\nSET status = 'rejected',\nrejectionReason = '...'
+        activate DB
+        DB --> API : Updated
+        deactivate DB
+
+        API -> NS : notifyClient(clientId,\ntype='document_rejected',\nbody='Su documento "Contrato"\nha sido rechazado.\nMotivo: Documento ilegible...')
+        activate NS
+        NS --> Client : Email:\n"Documento rechazado.\nMotivo: ..."
+        deactivate NS
+
+        API --> FE : 200 OK
+        deactivate API
+        FE --> Associate : Show status: "Rechazado"
+        deactivate FE
+
+        == 4a. Client Resubmits Rejected Document ==
+
+        Client -> Portal : Log in, see rejected item\nwith reason
+        activate Portal
+        Portal --> Client : Show rejection reason:\n"Documento ilegible..."
+        Client -> Portal : Upload corrected file
+        Portal -> API : POST /api/documents\n{ requestId, file }
+        activate API
+        API -> DB : INSERT document (new version)
+        activate DB
+        DB --> API : Stored
+        deactivate DB
+        API -> DB : UPDATE document_request\nSET status = 'submitted',\nrejectionReason = NULL
+        activate DB
+        DB --> API : Updated
+        deactivate DB
+        API -> NS : notifyMember(assigneeId,\ntype='document_submitted',\nbody='Documento reenviado:\nContrato')
+        activate NS
+        NS --> Associate : Notification:\n"Documento reenviado"
+        deactivate NS
+        API --> Portal : 201 Created
+        deactivate API
+        Portal --> Client : Updated checklist
+        deactivate Portal
+
+    end
+
+end
+
+== 5. All Documents Accepted — Completion ==
+
+API -> DB : SELECT COUNT(*)\nFROM document_requests\nWHERE expedienteId = ?\nAND status != 'accepted'
+activate API
+activate DB
+DB --> API : count = 0
+deactivate DB
+
+note right of API #FERN_100
+  All document requests for this
+  expediente have status = 'accepted'.
+  Trigger completion notification.
+end note
+
+API -> NS : notifyAll(\nassigneeId, clientId,\ntype='all_documents_complete',\ntitle='Documentacion Completa',\nbody='Todos los documentos\nhan sido recibidos y aceptados\npara el expediente {ref}')
+activate NS
+NS --> Associate : "Documentacion completa\npara expediente {ref}"
+NS --> Client : Email: "Toda su\ndocumentacion ha sido\naceptada. Gracias."
+deactivate NS
+
+deactivate API
+
+note over Associate, DB
+  **Document request statuses:**
+  pending --> submitted --> accepted
+                       --> rejected --> submitted (resubmit loop)
+end note
+
+@enduml

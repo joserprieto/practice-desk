@@ -1,0 +1,63 @@
+%% F2 — Deadline (Plazo) Date Calculation Flow Diagram
+%% How deadline dates are calculated using dias habiles rules
+
+flowchart TD
+    START(["Deadline created<br/>(plazo procesal)"]) --> INPUT["Receive inputs:<br/>- startDate (notification date)<br/>- durationDays (number of days)<br/>- workingDays (boolean)"]
+
+    INPUT --> CHECK_TYPE{workingDays<br/>= true?}
+
+    CHECK_TYPE -- "No (calendar days)" --> SIMPLE["Add durationDays<br/>to startDate<br/>(calendario natural)"]
+    SIMPLE --> FINAL_CHECK
+
+    CHECK_TYPE -- "Yes (dias habiles)" --> INIT["Set currentDate = startDate<br/>Set remainingDays = durationDays"]
+
+    INIT --> NEXT_DAY["Move to next<br/>calendar day"]
+    NEXT_DAY --> IS_WEEKEND{Is it Saturday<br/>or Sunday?}
+
+    IS_WEEKEND -- Yes --> SKIP_WE["Skip day<br/>(not counted)"]
+    SKIP_WE --> NEXT_DAY
+
+    IS_WEEKEND -- No --> IS_HOLIDAY{Is it a<br/>public holiday?<br/>(festivo nacional<br/>o autonomico)}
+
+    IS_HOLIDAY -- Yes --> SKIP_HOL["Skip day<br/>(not counted)"]
+    SKIP_HOL --> NEXT_DAY
+
+    IS_HOLIDAY -- No --> IS_AUGUST{Is it in August?<br/>(receso judicial)}
+
+    IS_AUGUST -- Yes --> CHECK_DEADLINE_TYPE{Deadline type?}
+
+    CHECK_DEADLINE_TYPE -- "procedural" --> SKIP_AUG["Skip day<br/>(August judicial recess<br/>— dias inhabiles)"]
+    SKIP_AUG --> NEXT_DAY
+
+    CHECK_DEADLINE_TYPE -- "prescription /<br/>expiration /<br/>internal" --> COUNT_DAY
+
+    IS_AUGUST -- No --> COUNT_DAY["Count as 1 dia habil<br/>remainingDays -= 1"]
+
+    COUNT_DAY --> DAYS_LEFT{remainingDays<br/>> 0?}
+    DAYS_LEFT -- Yes --> NEXT_DAY
+    DAYS_LEFT -- No --> FINAL_CHECK
+
+    FINAL_CHECK{Does dueDate<br/>fall on weekend<br/>or holiday?}
+
+    FINAL_CHECK -- Yes --> EXTEND["Extend to next<br/>dia habil"]
+    EXTEND --> SET_DUE
+
+    FINAL_CHECK -- No --> SET_DUE["Set dueDate =<br/>currentDate"]
+
+    SET_DUE --> ALERTS["Schedule alert<br/>notifications:<br/>- T-7 dias habiles<br/>- T-3 dias habiles<br/>- T-1 dia habil"]
+    ALERTS --> ASSIGN["Assign to<br/>responsibleId (Member)<br/>+ notify supervisor"]
+    ASSIGN --> STORE["Store deadline:<br/>- startDate<br/>- dueDate<br/>- durationDays<br/>- workingDays<br/>- consequence<br/>- status: pending"]
+    STORE --> END_NODE(["Deadline<br/>tracking active"])
+
+    %% Styles
+    classDef startEnd fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef process fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef decision fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef skip fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+    classDef count fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+
+    class START,END_NODE startEnd
+    class INPUT,INIT,NEXT_DAY,SIMPLE,ALERTS,ASSIGN,STORE,SET_DUE,EXTEND process
+    class CHECK_TYPE,IS_WEEKEND,IS_HOLIDAY,IS_AUGUST,CHECK_DEADLINE_TYPE,DAYS_LEFT,FINAL_CHECK decision
+    class SKIP_WE,SKIP_HOL,SKIP_AUG skip
+    class COUNT_DAY count

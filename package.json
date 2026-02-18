@@ -9,12 +9,20 @@
     "release:major": "commit-and-tag-version --release-as major --skip.commit --skip.tag",
     "lint:md": "markdownlint-cli2 '**/*.md'",
     "lint:md:fix": "markdownlint-cli2 --fix '**/*.md'",
+    "lint:api": "redocly lint docs/architecture/api/openapi.yaml",
+    "lint:asyncapi": "asyncapi validate docs/architecture/api/asyncapi.yaml",
+    "docs:openapi": "redocly build-docs docs/architecture/api/openapi.yaml -o docs/architecture/api/dist/openapi.html",
+    "docs:asyncapi": "asyncapi generate fromTemplate docs/architecture/api/asyncapi.yaml @asyncapi/html-template -o docs/architecture/api/dist/asyncapi",
     "format": "prettier --write '**/*.{md,json,yml,yaml}'",
     "format:check": "prettier --check '**/*.{md,json,yml,yaml}'"
   },
   "devDependencies": {
+    "@asyncapi/cli": "^6.0.0",
+    "@redocly/cli": "^1.28.0",
     "commit-and-tag-version": "^12.5.0",
     "markdownlint-cli2": "^0.17.0",
-    "prettier": "^3.4.2"
+    "prettier": "^3.4.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }

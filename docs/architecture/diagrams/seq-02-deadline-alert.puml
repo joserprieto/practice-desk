@@ -1,0 +1,145 @@
+@startuml seq-02-deadline-alert
+!include brand-palette.puml
+title Deadline Alert & Escalation Chain (Alertas de Plazos)
+
+participant "Scheduler\n(CRON)" as Scheduler
+participant "DeadlineService" as DS
+participant "NotificationService" as NS
+database "Database" as DB
+actor "Associate\n(Abogado)" as Associate
+actor "Managing Partner\n(Socio Director)" as Partner
+
+== Daily Deadline Check (runs at 08:00) ==
+
+Scheduler -> DS : triggerDailyDeadlineCheck()
+activate DS
+
+DS -> DB : SELECT deadlines\nWHERE status = 'pending'\nAND dueDate BETWEEN\n  NOW() AND NOW() + 7 days\nORDER BY dueDate ASC
+activate DB
+DB --> DS : Pending deadlines list\n(with responsibleId,\nexpedienteId, consequence)
+deactivate DB
+
+note right of DS
+  Deadlines include:
+  - type: procedural, prescription,
+    expiration, internal
+  - consequence: preclusion,
+    case_abandonment,
+    prescription_expiry, none
+  - workingDays: true/false
+  - Calculation accounts for
+    dias habiles & August recess
+end note
+
+loop For each pending deadline
+
+    == 7 Days Remaining — First Alert ==
+
+    alt #HONEY_100 dueDate - NOW() == 7 days
+        DS -> NS : sendAlert(deadlineId,\nlevel='info', daysLeft=7)
+        activate NS
+
+        NS -> DB : INSERT notification\n(memberId=responsibleId,\ntype='deadline_reminder',\ntitle='Plazo en 7 dias',\nbody='Expediente {ref}:\n{description}.\nVence: {dueDate}',\nreferenceId=deadlineId,\nreferenceType='deadline')
+        activate DB
+        DB --> NS : Notification saved
+        deactivate DB
+
+        NS -> NS : Send email notification
+        NS --> DS : Alert sent (info)
+        deactivate NS
+        DS --> Associate : Email + in-app:\n"Recordatorio: plazo\nvence en 7 dias"
+
+    == 3 Days Remaining — Second Alert ==
+
+    else #HONEY_100 dueDate - NOW() == 3 days
+        DS -> NS : sendAlert(deadlineId,\nlevel='warning', daysLeft=3)
+        activate NS
+
+        NS -> DB : INSERT notification\n(type='deadline_reminder',\ntitle='Plazo en 3 dias - ATENCION',\nbody='Expediente {ref}:\n{description}.\nConsecuencia: {consequence}')
+        activate DB
+        DB --> NS : Notification saved
+        deactivate DB
+
+        NS -> NS : Send email + push notification
+        NS --> DS : Alert sent (warning)
+        deactivate NS
+        DS --> Associate : Email + push:\n"ATENCION: plazo\nvence en 3 dias"
+
+    == 1 Day Remaining — Urgent Alert ==
+
+    else #CLAY_100 dueDate - NOW() == 1 day
+        DS -> NS : sendAlert(deadlineId,\nlevel='urgent', daysLeft=1)
+        activate NS
+
+        NS -> DB : INSERT notification\n(type='deadline_reminder',\ntitle='URGENTE: Plazo manana',\nbody='Expediente {ref}:\n{description}.\nConsecuencia: {consequence}.\nAccion inmediata requerida.')
+        activate DB
+        DB --> NS : Notification saved
+        deactivate DB
+
+        NS -> NS : Send email + push + SMS
+        NS --> DS : Alert sent (urgent)
+        deactivate NS
+        DS --> Associate : Email + push + SMS:\n"URGENTE: plazo vence\nMANANA"
+
+    == Overdue — Escalation to Managing Partner ==
+
+    else #CLAY_100 dueDate < NOW() AND status == 'pending'
+        DS -> DB : UPDATE deadline\nSET status = 'overdue'\nWHERE id = ?
+        activate DB
+        DB --> DS : Status updated
+        deactivate DB
+
+        DS -> NS : sendEscalation(deadlineId,\nlevel='critical')
+        activate NS
+
+        note right of NS #CLAY_100
+          ESCALATION: Overdue deadline
+          is now reported to the
+          managing partner (supervisor).
+        end note
+
+        NS -> DB : SELECT member\nWHERE role = 'managing_partner'\nAND firmId = ?
+        activate DB
+        DB --> NS : Managing partner details
+        deactivate DB
+
+        group Notify Associate (overdue)
+            NS -> DB : INSERT notification\n(memberId=responsibleId,\ntitle='VENCIDO: Plazo expirado',\nbody='El plazo ha vencido.\nSe ha escalado al Socio Director.')
+            activate DB
+            DB --> NS : Saved
+            deactivate DB
+            NS --> Associate : Email + push + SMS:\n"VENCIDO: plazo expirado.\nEscalado a Socio Director."
+        end
+
+        group Notify Managing Partner (escalation)
+            NS -> DB : INSERT notification\n(memberId=partnerId,\ntype='deadline_reminder',\ntitle='ESCALACION: Plazo vencido',\nbody='Expediente {ref}:\n{description}.\nResponsable: {associateName}.\nConsecuencia: {consequence}.')
+            activate DB
+            DB --> NS : Saved
+            deactivate DB
+            NS --> Partner : Email + push + SMS:\n"ESCALACION: plazo vencido\nen expediente {ref}"
+        end
+
+        NS --> DS : Escalation sent
+        deactivate NS
+
+    end
+
+end
+
+DS -> DB : INSERT deadline_check_log\n(runAt=NOW(),\ndeadlinesProcessed=N,\nalertsGenerated=M,\nescalations=E)
+activate DB
+DB --> DS : Log saved
+deactivate DB
+
+DS --> Scheduler : Check complete\n(processed: N,\nalerts: M,\nescalations: E)
+deactivate DS
+
+note over Scheduler, Partner
+  **Alert escalation chain summary:**
+  7 days  --> Info alert (email + in-app)
+  3 days  --> Warning (email + push)
+  1 day   --> Urgent (email + push + SMS)
+  Overdue --> Critical escalation to managing partner
+end note
+
+@enduml

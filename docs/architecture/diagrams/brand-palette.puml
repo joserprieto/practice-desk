@@ -1,0 +1,131 @@
+' ============================================================
+' Practice Desk — Brand Palette (shared include)
+' ============================================================
+' Usage: !include brand-palette.puml
+
+!define SAGE_600 #3d5a3d
+!define SAGE_500 #4d6c50
+!define SAGE_100 #d7e1d8
+!define HONEY_500 #716404
+!define HONEY_100 #e1dfcd
+!define FERN_100 #d5e2d6
+!define FERN_500 #2d6a2d
+!define CLAY_100 #edd9d6
+!define CLAY_500 #8a3a3a
+!define SLATE_100 #d5dfeb
+!define SLATE_500 #3a5a7a
+!define BG #fafcfa
+!define BG_MUTED #e8ece8
+!define TEXT #141a14
+
+' ── Common ──
+skinparam {
+    BackgroundColor BG
+    Shadowing false
+    RoundCorner 8
+    DefaultFontName Inter
+    DefaultFontSize 11
+    DefaultFontColor TEXT
+    ArrowColor SAGE_500
+    ArrowFontColor TEXT
+    ArrowFontSize 10
+    TitleFontColor TEXT
+    TitleFontSize 14
+    TitleFontStyle bold
+    HeaderFontColor SAGE_600
+    LegendBackgroundColor HONEY_100
+    LegendBorderColor HONEY_500
+    LegendFontColor TEXT
+}
+
+' ── Class diagrams ──
+skinparam class {
+    BackgroundColor BG_MUTED
+    BorderColor SAGE_600
+    FontColor TEXT
+    HeaderBackgroundColor SAGE_100
+    StereotypeFontColor SAGE_500
+}
+
+' ── Package ──
+skinparam package {
+    BackgroundColor BG
+    BorderColor SAGE_500
+    FontColor TEXT
+    FontStyle bold
+}
+
+' ── Note ──
+skinparam note {
+    BackgroundColor HONEY_100
+    BorderColor HONEY_500
+    FontColor TEXT
+}
+
+' ── Sequence diagrams ──
+skinparam sequence {
+    ParticipantBackgroundColor SAGE_100
+    ParticipantBorderColor SAGE_600
+    ParticipantFontColor TEXT
+    ActorBackgroundColor SAGE_100
+    ActorBorderColor SAGE_600
+    ActorFontColor TEXT
+    LifeLineBorderColor SAGE_500
+    LifeLineBackgroundColor FERN_100
+    ArrowColor SAGE_500
+    ArrowFontColor TEXT
+    ArrowFontSize 10
+    GroupBackgroundColor BG_MUTED
+    GroupBorderColor SAGE_500
+    GroupFontColor TEXT
+    GroupHeaderFontColor TEXT
+    DividerBackgroundColor HONEY_100
+    DividerBorderColor HONEY_500
+    DividerFontColor TEXT
+    BoxBackgroundColor BG
+    BoxBorderColor SAGE_500
+    BoxFontColor TEXT
+    ReferenceBackgroundColor SLATE_100
+    ReferenceBorderColor SLATE_500
+    ReferenceFontColor TEXT
+}
+
+' ── State diagrams ──
+skinparam state {
+    BackgroundColor BG_MUTED
+    BorderColor SAGE_600
+    FontColor TEXT
+    StartColor SAGE_600
+    EndColor CLAY_500
+    ArrowColor SAGE_500
+}
+
+' ── Component diagrams ──
+skinparam component {
+    BackgroundColor BG_MUTED
+    BorderColor SAGE_600
+    FontColor TEXT
+}
+
+' ── Rectangle ──
+skinparam rectangle {
+    BackgroundColor BG_MUTED
+    BorderColor SAGE_600
+    FontColor TEXT
+    RoundCorner 8
+}
+
+' ── Card ──
+skinparam card {
+    BackgroundColor BG_MUTED
+    BorderColor SAGE_600
+    FontColor TEXT
+    RoundCorner 8
+}
+
+' ── Database ──
+skinparam database {
+    BackgroundColor SLATE_100
+    BorderColor SLATE_500
+    FontColor TEXT
+}

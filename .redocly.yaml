@@ -1,0 +1,16 @@
+extends:
+  - recommended
+
+apis:
+  main:
+    root: docs/architecture/api/openapi.yaml
+
+rules:
+  no-unused-components: warn
+  operation-operationId: error
+  operation-summary: warn
+  tag-description: warn
+  no-ambiguous-paths: error
+  no-identical-paths: error
+  path-parameters-defined: error
+  no-server-example.com: off

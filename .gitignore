@@ -48,6 +48,7 @@ pnpm-debug.log*
 # Build Output
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 dist/
+docs/architecture/api/dist/
 out/
 .next/
 .turbo/

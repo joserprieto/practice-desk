@@ -1,0 +1,720 @@
+asyncapi: 3.0.0
+info:
+  title: Practice Desk WebSocket Events
+  version: 1.0.0
+  description: |
+    Real-time WebSocket event contracts for Practice Desk — a Spanish legal
+    practice management platform.
+
+    ## Connection
+
+    Clients connect to the WebSocket endpoint and authenticate by sending an
+    `auth` message as the first frame after connection:
+
+    ```json
+    { "event": "auth", "data": { "token": "<accessToken>" } }
+    ```
+
+    The server validates the JWT and subscribes the connection to events scoped
+    to the authenticated user's firm (`firmId` from the token) and, where
+    applicable, to the specific member (`memberId`). Unauthenticated
+    connections are closed after a 5-second timeout.
+
+    ## Event Envelope
+
+    All events are wrapped in a standard envelope:
+
+    ```json
+    {
+      "event": "notification.created",
+      "timestamp": "2026-02-18T10:30:00Z",
+      "data": { ... }
+    }
+    ```
+
+    ## Reconnection
+
+    Clients should implement exponential backoff reconnection. Missed events
+    during disconnection can be retrieved via the REST API (e.g.,
+    `GET /v1/notifications?read=false`).
+  contact:
+    name: Practice Desk Engineering
+    email: engineering@practicedesk.app
+  license:
+    name: Proprietary
+
+servers:
+  production:
+    host: api.practicedesk.app
+    protocol: wss
+    description: Production WebSocket endpoint
+    security:
+      - $ref: '#/components/securitySchemes/jwt'
+  staging:
+    host: staging-api.practicedesk.app
+    protocol: wss
+    description: Staging WebSocket endpoint
+    security:
+      - $ref: '#/components/securitySchemes/jwt'
+  development:
+    host: localhost:3000
+    protocol: ws
+    description: Local development WebSocket endpoint
+    security:
+      - $ref: '#/components/securitySchemes/jwt'
+
+defaultContentType: application/json
+
+channels:
+  ws:
+    address: /ws
+    description: |
+      Primary WebSocket channel for all real-time events. Clients connect
+      and authenticate by sending an `auth` message with a JWT token as the
+      first frame. The server pushes events to connected clients based on
+      their firm membership and role.
+    messages:
+      notificationCreated:
+        $ref: '#/components/messages/notificationCreated'
+      deadlineApproaching:
+        $ref: '#/components/messages/deadlineApproaching'
+      deadlineOverdue:
+        $ref: '#/components/messages/deadlineOverdue'
+      documentSubmitted:
+        $ref: '#/components/messages/documentSubmitted'
+      documentReviewed:
+        $ref: '#/components/messages/documentReviewed'
+      messageCreated:
+        $ref: '#/components/messages/messageCreated'
+      hearingReminder:
+        $ref: '#/components/messages/hearingReminder'
+      appointmentReminder:
+        $ref: '#/components/messages/appointmentReminder'
+      appointmentRescheduleRequested:
+        $ref: '#/components/messages/appointmentRescheduleRequested'
+      expedienteStatusChanged:
+        $ref: '#/components/messages/expedienteStatusChanged'
+      resolutionReceived:
+        $ref: '#/components/messages/resolutionReceived'
+
+operations:
+  onNotificationCreated:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A new system notification was created for the member
+    messages:
+      - $ref: '#/channels/ws/messages/notificationCreated'
+
+  onDeadlineApproaching:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A procedural deadline is approaching its due date
+    messages:
+      - $ref: '#/channels/ws/messages/deadlineApproaching'
+
+  onDeadlineOverdue:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A procedural deadline has passed its due date without completion
+    messages:
+      - $ref: '#/channels/ws/messages/deadlineOverdue'
+
+  onDocumentSubmitted:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A client has submitted a document to fulfill a request
+    messages:
+      - $ref: '#/channels/ws/messages/documentSubmitted'
+
+  onDocumentReviewed:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A document has been reviewed (accepted or rejected) by a member
+    messages:
+      - $ref: '#/channels/ws/messages/documentReviewed'
+
+  onMessageCreated:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A new message was posted in an expediente communication thread
+    messages:
+      - $ref: '#/channels/ws/messages/messageCreated'
+
+  onHearingReminder:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A court hearing is coming up (reminder sent before the scheduled date)
+    messages:
+      - $ref: '#/channels/ws/messages/hearingReminder'
+
+  onAppointmentReminder:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: An appointment is coming up (reminder sent before the scheduled time)
+    messages:
+      - $ref: '#/channels/ws/messages/appointmentReminder'
+
+  onAppointmentRescheduleRequested:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A client has requested to reschedule an appointment
+    messages:
+      - $ref: '#/channels/ws/messages/appointmentRescheduleRequested'
+
+  onExpedienteStatusChanged:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: An expediente has transitioned to a new status
+    messages:
+      - $ref: '#/channels/ws/messages/expedienteStatusChanged'
+
+  onResolutionReceived:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    summary: A new court resolution has been recorded for a proceeding
+    messages:
+      - $ref: '#/channels/ws/messages/resolutionReceived'
+
+components:
+  securitySchemes:
+    jwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token sent in the `auth` message payload on connection
+
+  messages:
+    notificationCreated:
+      name: notification.created
+      title: Notification Created
+      summary: A new system notification was created for the member
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/NotificationCreatedPayload'
+
+    deadlineApproaching:
+      name: deadline.approaching
+      title: Deadline Approaching
+      summary: |
+        A procedural deadline is approaching. Sent 7 days, 3 days, and 1 day
+        before the due date.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeadlineAlertPayload'
+
+    deadlineOverdue:
+      name: deadline.overdue
+      title: Deadline Overdue
+      summary: A deadline has become overdue without being marked as completed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeadlineAlertPayload'
+
+    documentSubmitted:
+      name: document.submitted
+      title: Document Submitted
+      summary: A client uploaded a document in response to a document request
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DocumentEventPayload'
+
+    documentReviewed:
+      name: document.reviewed
+      title: Document Reviewed
+      summary: A member reviewed a submitted document (accepted or rejected)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DocumentReviewedPayload'
+
+    messageCreated:
+      name: message.created
+      title: Message Created
+      summary: A new message was posted in an expediente thread
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MessageCreatedPayload'
+
+    hearingReminder:
+      name: hearing.reminder
+      title: Hearing Reminder
+      summary: |
+        Reminder for an upcoming court hearing. Sent 7 days, 1 day, and
+        2 hours before the hearing.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HearingReminderPayload'
+
+    appointmentReminder:
+      name: appointment.reminder
+      title: Appointment Reminder
+      summary: |
+        Reminder for an upcoming client appointment. Sent 1 day and 1 hour
+        before the appointment.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AppointmentReminderPayload'
+
+    appointmentRescheduleRequested:
+      name: appointment.reschedule_requested
+      title: Appointment Reschedule Requested
+      summary: A client has requested to reschedule an existing appointment
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AppointmentReschedulePayload'
+
+    expedienteStatusChanged:
+      name: expediente.status_changed
+      title: Expediente Status Changed
+      summary: An expediente transitioned to a new status in its lifecycle
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ExpedienteStatusChangedPayload'
+
+    resolutionReceived:
+      name: resolution.received
+      title: Resolution Received
+      summary: A new court resolution has been recorded
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ResolutionReceivedPayload'
+
+  schemas:
+    # Base event envelope
+    EventEnvelope:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          description: Event type identifier
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the event occurred
+        data:
+          type: object
+          description: Event-specific payload
+
+    # notification.created
+    NotificationCreatedPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: notification.created
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [notificationId, memberId, type, title]
+          properties:
+            notificationId:
+              type: string
+              format: uuid
+            memberId:
+              type: string
+              format: uuid
+            type:
+              type: string
+              enum:
+                - document_submitted
+                - document_rejected
+                - deadline_reminder
+                - hearing_reminder
+                - appointment_reminder
+                - reschedule_request
+                - all_documents_complete
+                - new_message
+                - new_resolution
+            title:
+              type: string
+            body:
+              type: string
+            referenceId:
+              type: string
+              format: uuid
+            referenceType:
+              type: string
+              enum: [expediente, appointment, document_request, hearing, deadline]
+
+    # deadline.approaching / deadline.overdue
+    DeadlineAlertPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          enum: [deadline.approaching, deadline.overdue]
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [deadlineId, expedienteId, description, dueDate, responsibleId, status, type]
+          properties:
+            deadlineId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            expedienteReference:
+              type: string
+              description: Internal reference of the expediente
+            proceedingId:
+              type: string
+              format: uuid
+            description:
+              type: string
+              description: What must be done
+            dueDate:
+              type: string
+              format: date
+            daysRemaining:
+              type: integer
+              description: Days until due (negative if overdue)
+            responsibleId:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [pending, overdue]
+            type:
+              type: string
+              enum: [procedural, prescription, expiration, internal]
+            consequence:
+              type: string
+              enum: [preclusion, case_abandonment, prescription_expiry, none]
+
+    # document.submitted
+    DocumentEventPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: document.submitted
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [documentId, requestId, expedienteId, fileName, uploadedBy]
+          properties:
+            documentId:
+              type: string
+              format: uuid
+            requestId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            expedienteReference:
+              type: string
+            requestTitle:
+              type: string
+            fileName:
+              type: string
+            mimeType:
+              type: string
+            sizeBytes:
+              type: integer
+            uploadedBy:
+              type: string
+              format: uuid
+              description: Client ID who uploaded
+
+    # document.reviewed
+    DocumentReviewedPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: document.reviewed
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [requestId, expedienteId, status, reviewedBy]
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            expedienteReference:
+              type: string
+            requestTitle:
+              type: string
+            status:
+              type: string
+              enum: [accepted, rejected]
+            rejectionReason:
+              type: string
+            reviewedBy:
+              type: string
+              format: uuid
+              description: Member ID who reviewed
+
+    # message.created
+    MessageCreatedPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: message.created
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [messageId, expedienteId, senderId, senderType, body]
+          properties:
+            messageId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            expedienteReference:
+              type: string
+            senderId:
+              type: string
+              format: uuid
+            senderType:
+              type: string
+              enum: [member, client]
+            senderName:
+              type: string
+            body:
+              type: string
+              description: Message content (may be truncated for preview)
+
+    # hearing.reminder
+    HearingReminderPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: hearing.reminder
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [hearingId, proceedingId, expedienteId, type, dateTime]
+          properties:
+            hearingId:
+              type: string
+              format: uuid
+            proceedingId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            expedienteReference:
+              type: string
+            type:
+              type: string
+              enum: [preliminary_hearing, main_hearing, oral_trial, appearance, ratification]
+            dateTime:
+              type: string
+              format: date-time
+            courtName:
+              type: string
+            courtroom:
+              type: string
+              description: Sala number
+            hoursUntil:
+              type: number
+              description: Hours until the hearing
+
+    # appointment.reminder
+    AppointmentReminderPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: appointment.reminder
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [appointmentId, clientId, memberId, date, startTime, type, location]
+          properties:
+            appointmentId:
+              type: string
+              format: uuid
+            clientId:
+              type: string
+              format: uuid
+            clientName:
+              type: string
+            memberId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            expedienteReference:
+              type: string
+            date:
+              type: string
+              format: date
+            startTime:
+              type: string
+              description: 'HH:mm'
+            duration:
+              type: integer
+              description: Minutes
+            type:
+              type: string
+              enum: [consultation, follow_up, signing]
+            location:
+              type: string
+              enum: [office, remote, client_site]
+            hoursUntil:
+              type: number
+              description: Hours until the appointment
+
+    # appointment.reschedule_requested
+    AppointmentReschedulePayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: appointment.reschedule_requested
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [appointmentId, clientId, memberId, currentDate, currentStartTime]
+          properties:
+            appointmentId:
+              type: string
+              format: uuid
+            clientId:
+              type: string
+              format: uuid
+            clientName:
+              type: string
+            memberId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            currentDate:
+              type: string
+              format: date
+            currentStartTime:
+              type: string
+              description: 'Current HH:mm'
+
+    # expediente.status_changed
+    ExpedienteStatusChangedPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: expediente.status_changed
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [expedienteId, reference, previousStatus, newStatus, changedBy]
+          properties:
+            expedienteId:
+              type: string
+              format: uuid
+            reference:
+              type: string
+              description: Internal reference
+            title:
+              type: string
+            previousStatus:
+              type: string
+              enum: [open, in_progress, pending_resolution, closed, archived]
+            newStatus:
+              type: string
+              enum: [open, in_progress, pending_resolution, closed, archived]
+            changedBy:
+              type: string
+              format: uuid
+              description: Member ID who made the change
+
+    # resolution.received
+    ResolutionReceivedPayload:
+      type: object
+      required: [event, timestamp, data]
+      properties:
+        event:
+          type: string
+          const: resolution.received
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          required: [resolutionId, proceedingId, expedienteId, type, date, isFinal, isAppealable]
+          properties:
+            resolutionId:
+              type: string
+              format: uuid
+            proceedingId:
+              type: string
+              format: uuid
+            expedienteId:
+              type: string
+              format: uuid
+            expedienteReference:
+              type: string
+            type:
+              type: string
+              enum: [sentencia, auto, providencia, decreto]
+            date:
+              type: string
+              format: date
+            notificationDate:
+              type: string
+              format: date
+            ruling:
+              type: string
+              description: Summary of the fallo
+            isFinal:
+              type: boolean
+              description: Whether firme (res judicata)
+            isAppealable:
+              type: boolean
+              description: Whether recurrible
+            appealType:
+              type: string
+            appealDeadlineDays:
+              type: integer
+              description: Days to file appeal (if applicable)

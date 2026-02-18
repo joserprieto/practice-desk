@@ -1,0 +1,74 @@
+%% D6 — Appointment (Cita) State Diagram
+%% States: scheduled -> confirmed -> completed
+%%         scheduled -> reschedule_requested -> scheduled
+%%         any -> cancelled
+
+stateDiagram-v2
+    direction TB
+
+    [*] --> scheduled : Associate or paralegal<br/>creates appointment (cita)
+
+    scheduled --> confirmed : Client confirms<br/>attendance
+    scheduled --> reschedule_requested : Client or associate<br/>requests new date/time
+    scheduled --> cancelled : Appointment cancelled<br/>by either party
+
+    reschedule_requested --> scheduled : New date/time<br/>proposed & accepted
+    reschedule_requested --> cancelled : Unable to find<br/>suitable date
+
+    confirmed --> completed : Meeting takes place<br/>(notes & time entry recorded)
+    confirmed --> reschedule_requested : Last-minute<br/>reschedule request
+    confirmed --> cancelled : Last-minute<br/>cancellation
+
+    completed --> [*]
+
+    note right of scheduled
+        Status: Programada
+        Appointment created with
+        date, time, duration, type
+        (consulta/seguimiento/firma)
+        and location (oficina/remoto/
+        domicilio del cliente).
+        Notification sent to client.
+    end note
+
+    note right of confirmed
+        Status: Confirmada
+        Client has confirmed attendance.
+        Reminder notification sent
+        24h before the appointment.
+    end note
+
+    note right of reschedule_requested
+        Status: Reprogramacion Solicitada
+        One party has requested a
+        schedule change. Generates
+        reschedule_request notification
+        for the associate.
+    end note
+
+    note right of completed
+        Status: Completada
+        Meeting held successfully.
+        Associate records notes
+        and billable time entry.
+    end note
+
+    note left of cancelled
+        Status: Cancelada
+        Appointment will not
+        take place. Reason
+        logged. Can happen
+        from any active state.
+    end note
+
+    classDef sageState fill:#d7e1d8,stroke:#3d5a3d,stroke-width:2px,color:#1a2e1a
+    classDef infoState fill:#d7e1d8,stroke:#3a5a7a,stroke-width:2px,color:#1a2e1a
+    classDef warningState fill:#d7e1d8,stroke:#716404,stroke-width:2px,color:#1a2e1a
+    classDef successState fill:#d7e1d8,stroke:#2d6a2d,stroke-width:2px,color:#1a2e1a
+    classDef dangerState fill:#d7e1d8,stroke:#8a3a3a,stroke-width:2px,color:#1a2e1a
+
+    class scheduled sageState
+    class confirmed infoState
+    class reschedule_requested warningState
+    class completed successState
+    class cancelled dangerState

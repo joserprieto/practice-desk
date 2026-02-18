@@ -13,6 +13,9 @@
   "ignores": [
     "node_modules/**",
     "CHANGELOG.md",
-    ".venv/**"
+    ".venv/**",
+    "_SNAPSHOT-*/**",
+    "docs/plans/**",
+    "docs/architecture/api/dist/**"
   ]
 }

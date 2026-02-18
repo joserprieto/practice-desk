@@ -1,6 +1,11 @@
 CHANGELOG.md
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
 node_modules/
 .venv/
 dist/
 build/
 *.hbs
+_SNAPSHOT-*/
+docs/architecture/api/dist/

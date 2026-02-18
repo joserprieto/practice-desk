@@ -1,0 +1,152 @@
+@startuml seq-01-create-expediente
+!include brand-palette.puml
+title Create Expediente (Nuevo Expediente)
+
+actor "Associate\n(Abogado)" as Associate
+participant "Frontend" as FE
+participant "API" as API
+database "Database" as DB
+
+== 1. Initiate Expediente Creation ==
+
+Associate -> FE : Click "Nuevo Expediente"
+activate FE
+FE -> API : GET /api/clients?firmId={firmId}
+activate API
+API -> DB : SELECT clients WHERE firmId = ?
+activate DB
+DB --> API : Client list
+deactivate DB
+API --> FE : 200 OK — client list
+deactivate API
+FE --> Associate : Show expediente form\nwith client selector
+deactivate FE
+
+== 2. Fill Basic Data & Assign Client ==
+
+Associate -> FE : Fill title, jurisdiction,\nmatterType, billingModel\n& select client
+activate FE
+FE --> Associate : Enable court/case fields
+deactivate FE
+
+== 3. Register Court & Case Number ==
+
+Associate -> FE : Select court (juzgado)\n& enter case number\n(numero de autos)
+activate FE
+FE -> API : GET /api/courts?firmId={firmId}
+activate API
+API -> DB : SELECT courts WHERE firmId = ?
+activate DB
+DB --> API : Court directory
+deactivate DB
+API --> FE : 200 OK — court list
+deactivate API
+FE --> Associate : Show court selector
+deactivate FE
+
+== 4. Assign Procurador ==
+
+Associate -> FE : Select procurador\n(court agent)
+activate FE
+FE -> API : GET /api/court-agents?firmId={firmId}
+activate API
+API -> DB : SELECT court_agents WHERE firmId = ?
+activate DB
+DB --> API : CourtAgent directory
+deactivate DB
+API --> FE : 200 OK — court agent list
+deactivate API
+FE --> Associate : Show procurador selector
+deactivate FE
+
+== 5. Register Parties (Partes Procesales) ==
+
+Associate -> FE : Add parties:\nplaintiff (demandante),\ndefendant (demandado),\nopposing counsel, etc.
+activate FE
+
+note right of FE
+  Each party includes:
+  - name
+  - role (plaintiff, defendant, co_defendant, third_party)
+  - taxId (NIF/CIF)
+  - opposingCounsel
+  - opposingCourtAgent
+end note
+
+FE --> Associate : Party list populated
+deactivate FE
+
+== 6. Conflict of Interest Check ==
+
+Associate -> FE : Submit expediente
+activate FE
+FE -> API : POST /api/expedientes
+activate API
+
+API -> API : Validate required fields:\ntitle, jurisdiction,\nclientId, assigneeId
+
+API -> DB : SELECT parties\nWHERE firmId = ? \nAND (name ILIKE ? OR taxId = ?)
+activate DB
+DB --> API : Matching parties from\nother expedientes
+deactivate DB
+
+alt #CLAY_100 Conflict Found
+    API -> DB : INSERT conflict_check_log
+    activate DB
+    DB --> API : Log saved
+    deactivate DB
+    API --> FE : 409 Conflict\n{ "conflictsWith": [\n  { "expedienteRef": "2025/0018",\n    "partyName": "...",\n    "role": "defendant" }\n]}
+    FE --> Associate : Show conflict warning:\n"Conflicto de intereses detectado\ncon expediente 2025/0018"
+    note right of Associate
+      Associate must either:
+      1. Cancel creation
+      2. Acknowledge conflict
+         with justification
+    end note
+
+    alt Associate cancels
+        Associate -> FE : Cancel
+        FE --> Associate : Return to dashboard
+    else Associate acknowledges with justification
+        Associate -> FE : Provide justification\n& confirm override
+        FE -> API : POST /api/expedientes\n{ conflictOverride: true,\n  conflictJustification: "..." }
+        activate API
+    end
+
+else #FERN_100 No Conflict Found
+    note right of API
+      No matching parties found
+      in active expedientes.
+      Proceed with creation.
+    end note
+end
+
+== 7. Create Expediente Record ==
+
+API -> DB : BEGIN TRANSACTION
+activate DB
+
+API -> DB : INSERT expediente\n(firmId, clientId, assigneeId,\nreference, title, jurisdiction,\nmatterType, status='open',\ncourtId, courtAgentId, caseNumber,\nbillingModel)
+DB --> API : Expediente created\n(UUIDv7 id)
+
+API -> DB : INSERT parties[]\n(expedienteId, name, role,\ntaxId, opposingCounsel, ...)
+DB --> API : Parties created
+
+API -> DB : COMMIT
+DB --> API : Transaction committed
+deactivate DB
+
+API --> FE : 201 Created\n{ expediente: { id, reference, status } }
+deactivate API
+deactivate API
+
+FE --> Associate : Show expediente detail page\n"Expediente 2026/0042 creado\ncorrectamente"
+deactivate FE
+
+note over Associate, DB
+  The expediente is created with status = **open**.
+  Next steps: create proceedings, set deadlines,
+  request documents, register time entries.
+end note
+
+@enduml

@@ -1,0 +1,706 @@
+# =============================================================================
+# Domain Overview — PracticeDesk
+# High-level architecture diagram showing domain boundaries and data flow
+# for the Spanish legal practice management platform.
+# =============================================================================
+
+direction: right
+
+title: |md
+  # PracticeDesk --- Domain Overview
+  High-level domain architecture for the legal practice management platform
+| {
+  style: {
+    font-size: 24
+    font-color: "#141a14"
+  }
+}
+
+# =============================================================================
+# Global styles
+# =============================================================================
+
+style: {
+  fill: "#fafcfa"
+}
+
+# =============================================================================
+# External: Client Portal
+# =============================================================================
+
+client-portal: Client Portal {
+  shape: rectangle
+  style: {
+    fill: "#d5dfeb"
+    stroke: "#3a5a7a"
+    stroke-width: 2
+    border-radius: 8
+    font-size: 16
+    font-color: "#141a14"
+    bold: true
+  }
+}
+
+# =============================================================================
+# External: Client entity (outside Firm boundary)
+# =============================================================================
+
+client: Client {
+  shape: rectangle
+  style: {
+    fill: "#d5dfeb"
+    stroke: "#3a5a7a"
+    stroke-width: 2
+    border-radius: 6
+    font-size: 15
+    font-color: "#141a14"
+    bold: true
+  }
+}
+
+# =============================================================================
+# Firm (tenant boundary -- main container)
+# =============================================================================
+
+firm: Firm (Despacho de Abogados) {
+  style: {
+    fill: "#fafcfa"
+    stroke: "#3d5a3d"
+    stroke-width: 3
+    border-radius: 12
+    font-size: 18
+    font-color: "#141a14"
+    bold: true
+  }
+
+  # ---------------------------------------------------------------------------
+  # Users & Roles
+  # ---------------------------------------------------------------------------
+
+  users-roles: Users & Roles {
+    style: {
+      fill: "#d7e1d8"
+      stroke: "#3d5a3d"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 14
+      font-color: "#141a14"
+      bold: true
+    }
+
+    member: Member {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 13
+        font-color: "#141a14"
+      }
+    }
+
+    user: User {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 13
+        font-color: "#141a14"
+      }
+    }
+
+    roles-note: |md
+      **Roles**: managing_partner,
+      associate, paralegal, office_admin
+    | {
+      shape: rectangle
+      style: {
+        fill: "#e1dfcd"
+        stroke: "#716404"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 11
+        font-color: "#141a14"
+      }
+    }
+
+    user -> member: "1:1 auth identity" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # Legal Core (central domain)
+  # ---------------------------------------------------------------------------
+
+  legal-core: Legal Core {
+    style: {
+      fill: "#d7e1d8"
+      stroke: "#3d5a3d"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 14
+      font-color: "#141a14"
+      bold: true
+    }
+
+    expediente: Expediente {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#2d6a2d"
+        stroke-width: 3
+        border-radius: 6
+        font-size: 15
+        font-color: "#141a14"
+        bold: true
+        shadow: true
+      }
+    }
+
+    proceeding: Proceeding {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 13
+        font-color: "#141a14"
+      }
+    }
+
+    procedural-action: ProceduralAction {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    resolution: Resolution {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    hearing: Hearing {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    deadline: Deadline {
+      shape: rectangle
+      style: {
+        fill: "#e1dfcd"
+        stroke: "#716404"
+        stroke-width: 2
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+        bold: true
+      }
+    }
+
+    party: Party {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    # Expediente -> children
+    expediente -> proceeding: "1:N" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+
+    expediente -> party: "1:N" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+
+    expediente -> deadline: "1:N direct" {
+      style: {
+        stroke: "#716404"
+        font-size: 11
+        font-color: "#716404"
+      }
+    }
+
+    # Proceeding -> children
+    proceeding -> procedural-action: "1:N" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+
+    proceeding -> resolution: "1:N" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+
+    proceeding -> hearing: "1:N" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+
+    proceeding -> deadline: "0..1:N" {
+      style: {
+        stroke: "#716404"
+        font-size: 11
+        font-color: "#716404"
+      }
+    }
+
+    # Appeal chain (self-referential)
+    proceeding -> proceeding: "appeal chain\n(previousProceedingId)" {
+      style: {
+        stroke: "#8a3a3a"
+        stroke-dash: 5
+        font-size: 10
+        font-color: "#8a3a3a"
+      }
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # Documents & Communication
+  # ---------------------------------------------------------------------------
+
+  docs-comms: Documents & Communication {
+    style: {
+      fill: "#d7e1d8"
+      stroke: "#3d5a3d"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 14
+      font-color: "#141a14"
+      bold: true
+    }
+
+    document-request: DocumentRequest {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    document: Document {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    message: Message {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    notification: Notification {
+      shape: rectangle
+      style: {
+        fill: "#e1dfcd"
+        stroke: "#716404"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    document-request -> document: "1:N uploads" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # Financial
+  # ---------------------------------------------------------------------------
+
+  financial: Financial {
+    style: {
+      fill: "#d7e1d8"
+      stroke: "#3d5a3d"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 14
+      font-color: "#141a14"
+      bold: true
+    }
+
+    time-entry: TimeEntry {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    invoice: Invoice {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    time-entry -> invoice: "N:1 billed on" {
+      style: {
+        stroke: "#4d6c50"
+        font-size: 11
+        font-color: "#4d6c50"
+      }
+    }
+
+    verifactu-note: |md
+      **VeriFactu compliant**
+      IVA + IRPF calculations
+    | {
+      shape: rectangle
+      style: {
+        fill: "#e1dfcd"
+        stroke: "#716404"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 10
+        font-color: "#141a14"
+      }
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # Scheduling
+  # ---------------------------------------------------------------------------
+
+  scheduling: Scheduling {
+    style: {
+      fill: "#d7e1d8"
+      stroke: "#3d5a3d"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 14
+      font-color: "#141a14"
+      bold: true
+    }
+
+    appointment: Appointment {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # Directories
+  # ---------------------------------------------------------------------------
+
+  directories: Directories {
+    style: {
+      fill: "#d7e1d8"
+      stroke: "#3d5a3d"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 14
+      font-color: "#141a14"
+      bold: true
+    }
+
+    court: Court {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+
+    court-agent: CourtAgent {
+      shape: rectangle
+      style: {
+        fill: "#fafcfa"
+        stroke: "#3d5a3d"
+        stroke-width: 1
+        border-radius: 4
+        font-size: 12
+        font-color: "#141a14"
+      }
+    }
+  }
+
+  # ===========================================================================
+  # Cross-container connections WITHIN Firm
+  # ===========================================================================
+
+  # Expediente is the central hub -- connections to other subdomains
+
+  legal-core.expediente -> docs-comms.document-request: "1:N requests docs" {
+    style: {
+      stroke: "#4d6c50"
+      font-size: 11
+      font-color: "#4d6c50"
+    }
+  }
+
+  legal-core.expediente -> docs-comms.message: "1:N messages" {
+    style: {
+      stroke: "#4d6c50"
+      font-size: 11
+      font-color: "#4d6c50"
+    }
+  }
+
+  legal-core.expediente -> financial.time-entry: "1:N time tracked" {
+    style: {
+      stroke: "#4d6c50"
+      font-size: 11
+      font-color: "#4d6c50"
+    }
+  }
+
+  legal-core.expediente -> financial.invoice: "1:N invoiced" {
+    style: {
+      stroke: "#4d6c50"
+      font-size: 11
+      font-color: "#4d6c50"
+    }
+  }
+
+  legal-core.expediente -> scheduling.appointment: "1:N meetings" {
+    style: {
+      stroke: "#4d6c50"
+      font-size: 11
+      font-color: "#4d6c50"
+    }
+  }
+
+  legal-core.expediente -> directories.court: "N:0..1 assigned court" {
+    style: {
+      stroke: "#3a5a7a"
+      stroke-dash: 3
+      font-size: 11
+      font-color: "#3a5a7a"
+    }
+  }
+
+  legal-core.expediente -> directories.court-agent: "N:0..1 procurador" {
+    style: {
+      stroke: "#3a5a7a"
+      stroke-dash: 3
+      font-size: 11
+      font-color: "#3a5a7a"
+    }
+  }
+
+  # Member assignments
+  users-roles.member -> legal-core.expediente: "N:1 assigned (lead)" {
+    style: {
+      stroke: "#4d6c50"
+      font-size: 11
+      font-color: "#4d6c50"
+    }
+  }
+
+  users-roles.member -> docs-comms.notification: "1:N receives" {
+    style: {
+      stroke: "#716404"
+      stroke-dash: 3
+      font-size: 11
+      font-color: "#716404"
+    }
+  }
+
+  users-roles.member -> scheduling.appointment: "N:1 attends" {
+    style: {
+      stroke: "#4d6c50"
+      font-size: 11
+      font-color: "#4d6c50"
+    }
+  }
+}
+
+# =============================================================================
+# External connections (outside Firm boundary)
+# =============================================================================
+
+# Client Portal -> Client
+client-portal -> client: "authenticates as" {
+  style: {
+    stroke: "#3a5a7a"
+    stroke-width: 2
+    font-size: 12
+    font-color: "#3a5a7a"
+  }
+}
+
+# Client -> Expediente (primary relationship)
+client -> firm.legal-core.expediente: "N:1 engages" {
+  style: {
+    stroke: "#2d6a2d"
+    stroke-width: 2
+    font-size: 12
+    font-color: "#2d6a2d"
+  }
+}
+
+# Client -> Appointment
+client -> firm.scheduling.appointment: "N:1 schedules" {
+  style: {
+    stroke: "#4d6c50"
+    font-size: 11
+    font-color: "#4d6c50"
+  }
+}
+
+# Client -> Message
+client -> firm.docs-comms.message: "sends / receives" {
+  style: {
+    stroke: "#4d6c50"
+    font-size: 11
+    font-color: "#4d6c50"
+  }
+}
+
+# Client -> Document (uploads via portal)
+client -> firm.docs-comms.document-request: "submits documents" {
+  style: {
+    stroke: "#4d6c50"
+    stroke-dash: 3
+    font-size: 11
+    font-color: "#4d6c50"
+  }
+}
+
+# Client -> Invoice (receives invoices)
+client -> firm.financial.invoice: "N:1 billed to" {
+  style: {
+    stroke: "#4d6c50"
+    stroke-dash: 3
+    font-size: 11
+    font-color: "#4d6c50"
+  }
+}
+
+# =============================================================================
+# Legend
+# =============================================================================
+
+legend: Legend {
+  style: {
+    fill: "#e8ece8"
+    stroke: "#3d5a3d"
+    stroke-width: 1
+    border-radius: 8
+    font-size: 13
+    font-color: "#141a14"
+  }
+
+  info: |md
+    **Line styles**
+    - Solid line: direct ownership / strong relationship
+    - Dashed line: reference / optional link
+    - Green (#2d6a2d): primary client relationship
+    - Sage (#4d6c50): standard data flow
+    - Honey (#716404): deadline / notification flow
+    - Slate (#3a5a7a): directory reference
+    - Clay (#8a3a3a): self-referential / appeal chain
+
+    **Color coding**
+    - Sage fill: internal firm subdomains
+    - Honey fill: warnings / deadlines / notes
+    - Slate fill: external actors / portal
+    - Bold green border: central entity (Expediente)
+  | {
+    shape: rectangle
+    style: {
+      fill: "#fafcfa"
+      stroke: "#3d5a3d"
+      stroke-width: 1
+      border-radius: 4
+      font-size: 11
+      font-color: "#141a14"
+    }
+  }
+}
