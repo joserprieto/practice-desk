@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@asyncapi/cli": "^6.0.0",
-    "@redocly/cli": "^1.28.0",
+    "@redocly/cli": "^2.19.1",
     "commit-and-tag-version": "^12.5.0",
     "markdownlint-cli2": "^0.17.0",
     "prettier": "^3.4.2",
