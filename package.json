@@ -22,7 +22,7 @@
     "commit-and-tag-version": "^12.5.0",
     "markdownlint-cli2": "^0.17.0",
     "prettier": "^3.4.2",
-    "react": "^19.0.0",
+    "react": "^19.2.5",
     "react-dom": "^19.0.0"
   }
 }
